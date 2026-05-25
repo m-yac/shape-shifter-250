@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Polyhedra Craft</title>
+    <style>
+      /* The whole app is a single 3D canvas filling the window. No chrome yet. */
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+      }
+      canvas {
+        display: block;
+      }
+      /* Tiny optional text readout (polyhedron name + verified mark). Toggled by config. */
+      #readout {
+        position: fixed;
+        left: 12px;
+        bottom: 12px;
+        font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+        color: #e8e8e8;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+        pointer-events: none;
+        user-select: none;
+        white-space: pre;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div id="readout"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
