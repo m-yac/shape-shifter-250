@@ -2,7 +2,9 @@ import { type Mesh } from "../geometry/HalfEdge";
 import { Polyhedron } from "../geometry/polyhedron";
 import { getSeed } from "../geometry/seeds";
 import { buildTruncate } from "../operations/truncate";
+import { buildSnub } from "../operations/snub";
 import { buildKis } from "../operations/kis";
+import { buildGyro } from "../operations/gyro";
 
 /**
  * The named-polyhedron database used for identification.
@@ -27,20 +29,28 @@ export interface NamedPolyhedron {
 const seed = (name: string): Mesh => getSeed(name);
 
 /** Uniform truncation (intermediate topology) of a seed. */
-const truncate = (name: string): Mesh =>
-  buildTruncate(new Polyhedron(getSeed(name)), 0, null).commit(0.5, false);
+const truncate = (mesh: Mesh): Mesh =>
+  buildTruncate(new Polyhedron(mesh), 0, null).commit(0.5, false);
 
 /** Rectify / ambo of a seed (the welded "max" of the truncate drag). */
-const rectify = (name: string): Mesh =>
-  buildTruncate(new Polyhedron(getSeed(name)), 0, null).commit(1, true);
+const rectify = (mesh: Mesh): Mesh =>
+  buildTruncate(new Polyhedron(mesh), 0, null).commit(1, true);
+
+/** Snub of a seed */
+const snub = (mesh: Mesh): Mesh =>
+  buildSnub(new Polyhedron(mesh), 0, null).commit(1, true);
 
 /** Kis (intermediate topology) of a seed. */
-const kis = (name: string): Mesh =>
-  buildKis(new Polyhedron(getSeed(name)), 0, null).commit(0.5, false);
+const kis = (mesh: Mesh): Mesh =>
+  buildKis(new Polyhedron(mesh), 0, null).commit(0.5, false);
 
 /** Join of a seed (the welded "max" of the kis drag). */
-const join = (name: string): Mesh =>
-  buildKis(new Polyhedron(getSeed(name)), 0, null).commit(1, true);
+const join = (mesh: Mesh): Mesh =>
+  buildKis(new Polyhedron(mesh), 0, null).commit(1, true);
+
+/** Join of a seed (the welded "max" of the kis drag). */
+const gyro = (mesh: Mesh): Mesh =>
+  buildGyro(new Polyhedron(mesh), 0, null).commit(1, true);
 
 export const NAMED: NamedPolyhedron[] = [
   // Platonic solids
@@ -50,25 +60,53 @@ export const NAMED: NamedPolyhedron[] = [
   { name: "Dodecahedron", mesh: seed("dodecahedron") },
   { name: "Icosahedron", mesh: seed("icosahedron") },
 
-  // Rectified (Archimedean / quasiregular)
-  { name: "Cuboctahedron", mesh: rectify("cube") },
-  { name: "Icosidodecahedron", mesh: rectify("icosahedron") },
+  // Archimedean solids
 
-  // Truncated (Archimedean)
-  { name: "Truncated tetrahedron", mesh: truncate("tetrahedron") },
-  { name: "Truncated cube", mesh: truncate("cube") },
-  { name: "Truncated octahedron", mesh: truncate("octahedron") },
-  { name: "Truncated dodecahedron", mesh: truncate("dodecahedron") },
-  { name: "Truncated icosahedron", mesh: truncate("icosahedron") },
+  // 1. Truncated
+  { name: "Truncated tetrahedron", mesh: truncate(getSeed("tetrahedron")) },
+  { name: "Truncated cube", mesh: truncate(getSeed("cube")) },
+  { name: "Truncated octahedron", mesh: truncate(getSeed("octahedron")) },
+  { name: "Truncated dodecahedron", mesh: truncate(getSeed("dodecahedron")) },
+  { name: "Truncated icosahedron", mesh: truncate(getSeed("icosahedron")) },
 
-  // Join (Catalan / rhombic)
-  { name: "Rhombic dodecahedron", mesh: join("cube") },
-  { name: "Rhombic triacontahedron", mesh: join("dodecahedron") },
+  // 2. Rectified
+  { name: "Cuboctahedron", mesh: rectify(getSeed("cube")) },
+  { name: "Icosidodecahedron", mesh: rectify(getSeed("icosahedron")) },
 
-  // Kis (Catalan / pyramid-augmented)
-  { name: "Triakis tetrahedron", mesh: kis("tetrahedron") },
-  { name: "Tetrakis hexahedron", mesh: kis("cube") },
-  { name: "Triakis octahedron", mesh: kis("octahedron") },
-  { name: "Pentakis dodecahedron", mesh: kis("dodecahedron") },
-  { name: "Triakis icosahedron", mesh: kis("icosahedron") },
+  // 3. Truncated-Rectified
+  { name: "Truncated Cuboctahedron", mesh: truncate(rectify(getSeed("cube"))) },
+  { name: "Truncated Icosidodecahedron", mesh: truncate(rectify(getSeed("icosahedron"))) },
+
+  // 4. Double-Rectified
+  { name: "Rhombicuboctahedron", mesh: rectify(rectify(getSeed("cube"))) },
+  { name: "Rhombiccosidodecahedron", mesh: rectify(rectify(getSeed("icosahedron"))) },
+
+  // 5. Snub-Rectified
+  { name: "Snub cuboctahedron", mesh: snub(rectify(getSeed("cube"))) },
+  { name: "Snub Icosidodecahedron", mesh: snub(rectify(getSeed("icosahedron"))) },
+
+  // Catalan solids
+
+  // 1. Kissed
+  { name: "Triakis tetrahedron", mesh: kis(getSeed("tetrahedron")) },
+  { name: "Tetrakis hexahedron", mesh: kis(getSeed("cube")) },
+  { name: "Triakis octahedron", mesh: kis(getSeed("octahedron")) },
+  { name: "Pentakis dodecahedron", mesh: kis(getSeed("dodecahedron")) },
+  { name: "Triakis icosahedron", mesh: kis(getSeed("icosahedron")) },
+
+  // 2. Joined
+  { name: "Rhombic dodecahedron", mesh: join(getSeed("cube")) },
+  { name: "Rhombic triacontahedron", mesh: join(getSeed("dodecahedron")) },
+
+  // 3. Kissed-Joined
+  { name: "Disdyakis dodecahedron", mesh: kis(join(getSeed("cube"))) },
+  { name: "Disdyakis triacontahedron", mesh: kis(join(getSeed("dodecahedron"))) },
+
+  // 4. Double-Joined
+  { name: "Deltoidal icositetrahedron", mesh: join(join(getSeed("cube"))) },
+  { name: "Deltoidal hexecontahedron", mesh: join(join(getSeed("dodecahedron"))) },
+
+  // 5. Gyro-Joined
+  { name: "Pentagonal icositetrahedron", mesh: gyro(join(getSeed("cube"))) },
+  { name: "Pentagonal hexecontahedron", mesh: gyro(join(getSeed("dodecahedron"))) },
 ];

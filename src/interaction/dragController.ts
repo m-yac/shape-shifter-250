@@ -170,6 +170,7 @@ export class DragController {
       base = !weld ? "Kis" : partial ? "Kis/Join" : "Join";
     } else {
       base = kind === "snub" ? "Snub" : "Gyro";
+      if (!weld) { base = "Partial " + base; }
     }
     if (!partial) return base;
     const onFaces = kind === "kis" || kind === "gyro";
@@ -386,7 +387,7 @@ export class DragController {
       if (kind === "vertex") {
         if (shift) {
           if (!ops.snub) return null;
-          return { plan: buildSnub(this.current, id, sel), allowMax: false };
+          return { plan: buildSnub(this.current, id, sel), allowMax: true };
         }
         if (!ops.truncate) return null;
         return {
@@ -396,7 +397,7 @@ export class DragController {
       } else {
         if (shift) {
           if (!ops.gyro) return null;
-          return { plan: buildGyro(this.current, id, sel), allowMax: false };
+          return { plan: buildGyro(this.current, id, sel), allowMax: true };
         }
         if (!ops.kis) return null;
         return { plan: buildKis(this.current, id, sel), allowMax: ops.join };

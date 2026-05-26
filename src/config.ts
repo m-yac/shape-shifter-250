@@ -24,8 +24,8 @@ export const config = {
       rectify: true, // the welded "max" end of the truncate drag (drag fully in)
       kis: true, // drag a face center outward (no modifier)
       join: true, // the welded "max" end of the kis drag (drag fully out)
-      snub: false, // Shift + drag a vertex — PHASE 2 (not yet implemented)
-      gyro: false, // Shift + drag a face   — PHASE 2 (not yet implemented)
+      snub: true, // Shift + drag a degree-2n vertex
+      gyro: true, // Shift + drag a 2n-gon face
     },
 
     multiSelect: true, // Cmd (macOS) / Ctrl: select several elements before dragging
