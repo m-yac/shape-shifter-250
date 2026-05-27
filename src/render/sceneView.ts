@@ -59,10 +59,18 @@ function faceGeometryArrays(mesh: Mesh): { positions: number[]; normals: number[
   const normals: number[] = [];
   for (const f of mesh.faces) {
     const n = newellNormal(f.map((i) => mesh.vertices[i]));
-    const p0 = mesh.vertices[f[0]];
-    for (let i = 1; i < f.length - 1; i++) {
-      const a = mesh.vertices[f[i]];
-      const b = mesh.vertices[f[i + 1]];
+    // Orient outward (same centroid convention as the markers / highlights): the
+    // solid is centered at the origin, so a face's outward direction is its
+    // centroid direction. Operations like truncate emit some faces with reversed
+    // winding (e.g. the freshly exposed vertex n-gons); without this their normal
+    // would point inward and the face would shade as if lit from behind. We also
+    // reverse the triangle winding to match, so winding and normal always agree.
+    const loop = n.dot(faceCentroidOf(mesh.vertices, f)) < 0 ? [...f].reverse() : f;
+    if (loop !== f) n.negate();
+    const p0 = mesh.vertices[loop[0]];
+    for (let i = 1; i < loop.length - 1; i++) {
+      const a = mesh.vertices[loop[i]];
+      const b = mesh.vertices[loop[i + 1]];
       positions.push(p0.x, p0.y, p0.z, a.x, a.y, a.z, b.x, b.y, b.z);
       for (let k = 0; k < 3; k++) normals.push(n.x, n.y, n.z);
     }

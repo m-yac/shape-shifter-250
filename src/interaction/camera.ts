@@ -13,19 +13,17 @@ export class CameraRig {
   readonly controls: ArcballControls;
 
   constructor(domElement: HTMLElement) {
-    this.camera = new PerspectiveCamera(
-      config.camera.fov,
-      window.innerWidth / window.innerHeight,
-      0.01,
-      1000,
-    );
+    // Aspect is a placeholder; the screen's first layout sets it via setAspect.
+    this.camera = new PerspectiveCamera(config.camera.fov, 1, 0.01, 1000);
     this.camera.position.set(0, 0, config.camera.startDistance);
 
     this.controls = new ArcballControls(this.camera, domElement);
     this.controls.rotateSpeed = config.camera.rotateSpeed;
     this.controls.scaleFactor = config.camera.scaleFactor;
     this.controls.enablePan = false;
+    this.controls.unsetMouseAction(1);
     this.controls.unsetMouseAction(2);
+    this.controls.unsetMouseAction('WHEEL', 'SHIFT');
     this.controls.minDistance = config.camera.minDistance;
     this.controls.maxDistance = config.camera.maxDistance;
     this.controls.enableAnimations = true;
@@ -43,8 +41,9 @@ export class CameraRig {
     this.controls.update();
   }
 
-  resize(): void {
-    this.camera.aspect = window.innerWidth / window.innerHeight;
+  /** Match the camera to the screen's aspect ratio (called on each layout). */
+  setAspect(aspect: number): void {
+    this.camera.aspect = aspect;
     this.camera.updateProjectionMatrix();
   }
 

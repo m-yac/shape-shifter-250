@@ -5,6 +5,7 @@ import { config } from "../config";
 import { Polyhedron } from "../geometry/polyhedron";
 import { canSnub } from "../operations/snub";
 import { canGyro } from "../operations/gyro";
+import { Screen, Popup } from "./screen";
 
 /** "vertex"/"vertices" or "face"/"faces" agreeing with `n`. */
 function plural(element: "vertex" | "face", n: number): string {
@@ -37,6 +38,9 @@ const DRAG_VERB: Record<OperationKind, [unwelded: string, welded: string]> = {
  * so identification surfaces here and in the console rather than as real UI.)
  */
 export class Readout {
+  private readonly polyBox: Popup; // "POLYHEDRON" frame, bottom-left
+  private readonly selBox: Popup; //  "SELECTION" frame, top-left (only while selecting)
+  private polyRows = 0; //            current height of the POLYHEDRON box, in rows
   private polyEl: HTMLElement | null;
   private selEl: HTMLElement | null;
   private poly: Polyhedron | null = null;
@@ -51,9 +55,57 @@ export class Readout {
   private invalid: boolean = false;
   private solving: boolean = false;
 
-  constructor() {
+  constructor(private readonly screen: Screen) {
+    // Each readout block lives in the body of its own box-drawing popup (matching
+    // the HISTORY panel). Each frame hugs its content and re-fits into its corner
+    // on every layout: the polyhedron info bottom-left, the selection info top-left.
+    this.polyBox = new Popup(screen, { cols: 12, rows: 5, title: "POLYHEDRON" });
+    this.polyBox.mount();
+    this.polyBox.body.appendChild(document.getElementById("poly-readout")!);
+
+    this.selBox = new Popup(screen, { cols: 12, rows: 4, title: "SELECTION" });
+    this.selBox.mount();
+    this.selBox.body.appendChild(document.getElementById("sel-readout")!);
+
     this.polyEl = document.getElementById("poly-readout");
     this.selEl = document.getElementById("sel-readout");
+
+    this.polyBox.el.style.display = "none"; // nothing to show until setPoly()
+    this.selBox.el.style.display = "none"; //  shown only while something is selected
+    screen.onLayout(() => this.layout());
+  }
+
+  /** Hide both frames (no polyhedron, or the readout feature is off). */
+  private hide(): void {
+    this.polyBox.el.style.display = "none";
+    this.selBox.el.style.display = "none";
+  }
+
+  /** Re-fit each visible frame to its content and pin it to its corner. */
+  private layout(): void {
+    if (this.polyBox.el.style.display !== "none" && this.polyEl) {
+      this.polyRows = this.fit(this.polyBox, this.polyEl, "bl");
+    }
+    if (this.selBox.el.style.display !== "none" && this.selEl) {
+      this.fit(this.selBox, this.selEl, "tl");
+    }
+  }
+
+  /** Size a popup to hug `el` (white-space:pre, so offsetWidth is its widest line)
+   *  plus a one-cell frame, and pin it to a screen corner. Returns its row count. */
+  private fit(popup: Popup, el: HTMLElement, corner: "tl" | "bl"): number {
+    const s = this.screen;
+    const cols = Math.min(s.cols, Math.max(3, Math.ceil(el.offsetWidth / s.colW) + 2));
+    const rows = Math.min(s.rows, Math.max(3, Math.ceil(el.offsetHeight / s.rowH) + 2));
+    popup.resize(cols, rows);
+    popup.placeAt(0, corner === "tl" ? 0 : s.rows - rows);
+    return rows;
+  }
+
+  /** Rows occupied by the bottom-left POLYHEDRON box (0 while hidden), so other
+   *  corner panels (e.g. HISTORY) can cap their height to avoid overlapping it. */
+  reservedBottomRows(): number {
+    return this.polyBox.el.style.display === "none" ? 0 : this.polyRows;
   }
 
   clear(): void {
@@ -66,10 +118,14 @@ export class Readout {
     this.verified = false;
     this.invalid = false;
     this.solving = false;
+    this.hide();
   }
 
   show(): void {
-    if (!this.polyEl || !this.selEl || !config.features.textReadout || !this.poly || !this.signature) return;
+    if (!this.polyEl || !this.selEl || !config.features.textReadout || !this.poly || !this.signature) {
+      this.hide();
+      return;
+    }
     const title = this.invalid
       ? "X invalid (faces won't planarize)"
       : (this.name ?? "Unknown polyhedron") + (this.verified ? "  ✓" : "");
@@ -86,6 +142,7 @@ export class Readout {
     if (!canDoGyro) { gyro.className = 'cannotSnubGyro'; }
     this.polyEl.append(snub);
     this.polyEl.append(gyro);
+    this.polyBox.el.style.display = "";
 
     if (this.drag || this.selection.size > 0) {
       let onFaces = this.selectionKind === "face";
@@ -110,10 +167,14 @@ export class Readout {
       if (!canDoGyro) { gyro.className = 'cannotSnubGyro'; }
       if (!onFaces) { this.selEl.append(snub); }
       if ( onFaces) { this.selEl.append(gyro); }
+      this.selBox.el.style.display = "";
     }
     else {
       this.selEl.textContent = "";
+      this.selBox.el.style.display = "none";
     }
+
+    this.layout();
   }
 
   setPoly(opts: {
@@ -154,6 +215,9 @@ export class Readout {
   setHint(text: string): void {
     if (!this.polyEl || !this.selEl || !config.features.textReadout) return;
     this.polyEl.textContent = text;
-    this.selEl.textContent = text;
+    this.selEl.textContent = "";
+    this.polyBox.el.style.display = "";
+    this.selBox.el.style.display = "none";
+    this.layout();
   }
 }

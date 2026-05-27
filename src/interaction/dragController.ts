@@ -17,6 +17,7 @@ import { Selection } from "./selection";
 import { Readout } from "../ui/readout";
 import { History, type HistoryEntry } from "../history/history";
 import { HistoryPanel } from "../ui/historyPanel";
+import { type Screen } from "../ui/screen";
 import { config } from "../config";
 
 const DRAG_START_PIXELS = 4;
@@ -83,7 +84,7 @@ export class DragController {
   private readonly picker = new Picker();
   private readonly selection: Selection; // created in the constructor, wired to the readout
   private readonly history = new History();
-  private readonly panel = new HistoryPanel((index) => this.jumpTo(index));
+  private readonly panel: HistoryPanel;
 
   private worker: Worker | null = null;
   private isoReq = 0;
@@ -98,8 +99,14 @@ export class DragController {
     private readonly controls: ArcballControls,
     private readonly canvas: HTMLCanvasElement,
     private readonly readout: Readout,
+    screen: Screen,
   ) {
     this.current = initial;
+    this.panel = new HistoryPanel(
+      screen,
+      (index) => this.jumpTo(index),
+      () => this.readout.reservedBottomRows(),
+    );
     if (config.features.isomorphismCheck) {
       this.worker = new Worker(
         new URL("../identify/isoWorker.ts", import.meta.url),

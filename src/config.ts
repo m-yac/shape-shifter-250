@@ -183,6 +183,69 @@ export const config = {
   },
 
   // ---------------------------------------------------------------------------
+  // SCREEN — the vintage-monitor frame and the character grid inside it.
+  //
+  //   The whole app lives on a centered "screen" (a CRT) smaller than the
+  //   browser window. Everything (text AND the 3D canvas) is laid out on a grid
+  //   of character cells from the AST PremiumExec font (an 8x19px PC font) drawn
+  //   at 2x, so one cell is 16px wide x 38px tall. The screen interior is always
+  //   sized to a whole number of cells, so HTML positioned with the grid helpers
+  //   (see ui/screen.ts) lines up exactly like text on a real terminal.
+  // ---------------------------------------------------------------------------
+  screen: {
+    fontPx: 38, // font-size that makes a cell exactly colW x rowH
+    colW: 16, // character cell width  (font advance 800/1900 * 38px)
+    rowH: 38, // character cell height (em box 1900/1900 * 38px = line-height)
+    viewportMargin: -20, // min gap from the browser edge to the monitor's outer frame
+    bezel: 40, // plastic-frame thickness around the glass (always >= this)
+    padding: 24, // dark glass margin between the bezel and the lit pixel grid
+  },
+
+  // ---------------------------------------------------------------------------
+  // THEME — the CRT phosphor + plastic look. All CSS-side colors live here and
+  //   are pushed to CSS custom properties at startup (see Screen.applyTheme).
+  // ---------------------------------------------------------------------------
+  theme: {
+    phosphor: "#86f2b0", // base text color (green phosphor)
+    phosphorBright: "#d2ffe2", // emphasized text (titles, current entry)
+    phosphorDim: "#3f8a5e", // de-emphasized text (redo tail, hints)
+    phosphorWarn: "#e0a36a", // invalid / warning text (amber)
+    glowColor: "78, 224, 122", // rgb of the phosphor glow (text-shadow + 3D bloom tint)
+    glass: "#0a0f0c", // CRT glass color behind the 3D canvas
+    room: "#04060a", // the void behind the monitor
+    bezelLight: "#3b3e37", // plastic frame: lit edge
+    bezelDark: "#1c1e19", // plastic frame: shadowed edge
+
+    // Phosphor "pixel" mask: a faint grid aligned to the font's pixel size. The
+    // 8x19 font drawn at 2x makes one source pixel exactly 2 CSS px, so a 2px
+    // grid lands on every font pixel and gives each one a little definition.
+    pixelMask: true,
+    pixelMaskStyle: "dots" as "lines" | "dots", // "lines": dark grid; "dots": a phosphor dot per pixel
+    pixelSize: 2, // px period of the mask (one font pixel at 2x)
+    pixelOpacity: 0.5, // darkness of the mask gridlines / gaps between dots
+
+    // Render the 3D view at the font-pixel resolution instead of full res: the
+    // WebGL buffer is 1 texel per `pixelSize` CSS px (= one font pixel), then
+    // nearest-neighbor upscaled, so the polyhedron is drawn on the SAME chunky
+    // pixel grid as the text. Since a cell is 16x38 = (8x19)*pixelSize, the buffer
+    // is always a whole number of texels and the upscale is an exact integer.
+    pixelateRender: true,
+
+    vignette: true, // darkened screen corners (CRT curvature hint)
+    vignetteOpacity: 0.55,
+
+    // BLOOM — one intensity drives BOTH the CSS text glow and the WebGL
+    // UnrealBloom over the 3D view, so they read as a single phosphor bloom.
+    // radius/threshold shape only the 3D pass.
+    bloom: {
+      intensity: 1.2, // master glow strength for text AND 3D (0 = off)
+      scale_3d: 0.2, // glow strength multiplier for 3D only
+      radius: 0, // 3D bloom spread
+      threshold: 0.05, // 3D bloom luminance threshold (only brighter pixels bloom)
+    },
+  },
+
+  // ---------------------------------------------------------------------------
   // RENDER — minimal, functional look only (no decorative visuals yet).
   // ---------------------------------------------------------------------------
   render: {
