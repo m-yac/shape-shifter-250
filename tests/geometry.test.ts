@@ -28,11 +28,11 @@ describe("canonicalSequence", () => {
 
 describe("formatConfig", () => {
   it("compresses runs into exponents", () => {
-    expect(formatConfig("4.4.4.4.4")).toBe("4^5");
-    expect(formatConfig("3.3.3.3.5")).toBe("3^4.5");
-    expect(formatConfig("4.4.4")).toBe("4^3");
+    expect(formatConfig("4.4.4.4.4")).toBe("4⁵");
+    expect(formatConfig("3.3.3.3.5")).toBe("3⁴.5");
+    expect(formatConfig("4.4.4")).toBe("4³");
     expect(formatConfig("3.4.3.4")).toBe("3.4.3.4"); // no consecutive runs
-    expect(formatConfig("3.8.8")).toBe("3.8^2");
+    expect(formatConfig("3.8.8")).toBe("3.8²");
   });
 });
 

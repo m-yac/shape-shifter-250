@@ -86,6 +86,19 @@ export function signaturesEqual(a: Signature, b: Signature): boolean {
 }
 
 /**
+ * Formats a number as a unicode superscript
+ */
+function superscript(num: number): string {
+  let result = "";
+  num = Math.floor(num);
+  while (num > 0) {
+    result += "⁰¹²³⁴⁵⁶⁷⁸⁹"[num % 10];
+    num = Math.floor(num / 10);
+  }
+  return result;
+}
+
+/**
  * Pretty configuration string using exponents for runs: the internal canonical
  * key "4.4.4.4.4" becomes "4^5", "3.3.3.3.5" becomes "3^4.5", and alternating
  * configs like "3.4.3.4" are left as-is.
@@ -98,7 +111,7 @@ export function formatConfig(canonical: string): string {
     let j = i;
     while (j < vals.length && vals[j] === vals[i]) j++;
     const run = j - i;
-    out.push(run > 1 ? `${vals[i]}^${run}` : vals[i]);
+    out.push(run > 1 ? `${vals[i]}${superscript(run)}` : vals[i]);
     i = j;
   }
   return out.join(".");
@@ -110,10 +123,9 @@ export function describeSignature(sig: Signature): string {
     Object.entries(m)
       .sort()
       .map(([k, n]) => `${n}×(${formatConfig(k)})`)
-      .join("  ");
+      .join(", ");
   return (
-    `V=${sig.V} E=${sig.E} F=${sig.F}\n` +
-    `  verts: ${fmt(sig.vertexConfigs)}\n` +
-    `  faces: ${fmt(sig.faceConfigs)}`
+    `${sig.F} Faces: ${fmt(sig.faceConfigs)}\n` +
+    `${sig.V} Vertices: ${fmt(sig.vertexConfigs)}`
   );
 }

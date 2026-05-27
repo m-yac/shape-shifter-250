@@ -81,7 +81,7 @@ export class DragController {
   private hoverMulti = false; // Cmd/Ctrl held while hovering (would drag as a selection)
 
   private readonly picker = new Picker();
-  private readonly selection = new Selection();
+  private readonly selection: Selection; // created in the constructor, wired to the readout
   private readonly history = new History();
   private readonly panel = new HistoryPanel((index) => this.jumpTo(index));
 
@@ -109,6 +109,7 @@ export class DragController {
         this.onIsoResult(e.data.id, e.data.result);
     }
     this.attach();
+    this.selection = new Selection(this.readout);
     this.history.reset(initial, seedLabel);
     this.view.setPolyhedron(this.current, false);
     this.runIdentify(this.current);
@@ -149,6 +150,7 @@ export class DragController {
     this.mode = "idle";
     this.pending = null;
     this.drag = null;
+    this.readout.setDrag(null); // drop any stale drag readout (e.g. undo mid-drag)
     this.selection.clear();
     this.current = entry.poly;
     this.invalid = entry.invalid;
@@ -358,6 +360,7 @@ export class DragController {
     }
     d.t = tEff;
     d.weld = weld;
+    this.readout.setDrag({ kind: active.plan.kind, weld, count: d.selCount });
     const verts = active.plan.positions(tEff);
     // Hide the big hover markers during the drag (as in the non-selection case).
     // When operating on a selection, the green "sticks around" via the small drag
@@ -427,6 +430,7 @@ export class DragController {
     const active = this.activeSlot(this.drag);
     const verts = active.plan.positions(0);
     this.view.showPreview({ vertices: verts, faces: active.plan.previewFaces });
+    this.readout.setDrag({ kind: active.plan.kind, weld: this.drag.weld, count: this.drag.selCount });
     // The drag marker is positioned on the first move (when we have a snap point).
   }
 
@@ -486,6 +490,7 @@ export class DragController {
     this.view.hideDragMarker();
 
     if (this.mode === "dragging" && this.drag) {
+      this.readout.setDrag(null); // back to the "Selected …" / idle readout
       if (this.drag.t <= MIN_COMMIT_T) {
         // negligible drag → no change. A Cmd-drag's add to the selection was only
         // temporary, so undo it (the handle wasn't selected before this drag).
@@ -556,10 +561,8 @@ export class DragController {
     // name). This also runs for the seed root and on restore — both harmless.
     this.history.annotate(this.history.current, this.invalid ? null : name, this.invalid);
     this.renderHistory();
-    this.readout.show({
-      name,
-      signature,
-      verified: false,
+    this.readout.setPoly({
+      poly, name, signature,
       invalid: this.invalid,
       solving: false,
     });
@@ -585,13 +588,7 @@ export class DragController {
 
   private onIsoResult(id: number, result: boolean): void {
     if (id !== this.isoReq || !result || !this.lastSignature) return;
-    this.readout.show({
-      name: this.lastName,
-      signature: this.lastSignature,
-      verified: true,
-      invalid: false,
-      solving: false,
-    });
+    this.readout.setVerified(true);
     if (config.features.logToConsole) console.log(`[identify] verified ✓ ${this.lastName}`);
   }
 
@@ -605,20 +602,51 @@ export class DragController {
       for (const id of this.selection.ids)
         this.view.showMarker(this.selection.kind, id, "selected");
     }
-    if (!this.hover || !config.features.hoverHighlight) return;
 
+    const hovering = !!this.hover && config.features.hoverHighlight;
     // "Affected" = this handle is part of the green selection — either already
     // command-clicked, or Cmd is held so a drag would add it. Those are previewed
     // green; a plain handle keeps the neutral hover look.
-    const selected = this.selection.isSelected(this.hover.kind, this.hover.id);
-    const affected = selected || (this.hoverMulti && this.hoverInRange);
+    const selected = hovering && this.selection.isSelected(this.hover!.kind, this.hover!.id);
+    const affected = selected || (hovering && this.hoverMulti && this.hoverInRange);
+
+    // A green Cmd-hovered handle isn't in the selection set yet, but a drag would add
+    // it, so count it toward the readout's selection. Skipped while dragging/relaxing,
+    // where the readout shows the live operation / status instead.
+    if (this.mode === "idle" && !this.solver)
+      this.syncReadoutSelection(affected && !selected ? this.hover : null);
+
+    if (!hovering) return;
+
     // Within drag range → prominent; merely nearby → subtle proximity hint.
     const state = affected ? "selected" : this.hoverInRange ? "hover" : "proximity";
-    this.view.showMarker(this.hover.kind, this.hover.id, state);
+    this.view.showMarker(this.hover!.kind, this.hover!.id, state);
 
     if (this.hoverInRange && this.hoverRay) {
-      this.showHoverPreview(this.hover, this.hoverRay, affected);
+      this.showHoverPreview(this.hover!, this.hoverRay, affected);
     }
+  }
+
+  /**
+   * Push the effective multi-selection to the readout: the committed selection plus
+   * one extra green Cmd-hovered handle that a drag would add. A handle of a different
+   * kind would switch the selection to its kind (a drag clears the old one), so it
+   * shows as a fresh selection of one.
+   */
+  private syncReadoutSelection(extra: Marker | null): void {
+    let kind = this.selection.kind;
+    let ids: Set<number>;
+    if (extra && kind !== null && kind !== extra.kind) {
+      kind = extra.kind;
+      ids = new Set([extra.id]);
+    } else {
+      ids = new Set(this.selection.ids);
+      if (extra) {
+        kind = extra.kind;
+        ids.add(extra.id);
+      }
+    }
+    this.readout.updateSelection(ids, kind);
   }
 
   /**

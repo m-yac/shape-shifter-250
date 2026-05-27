@@ -26,7 +26,7 @@ export class HistoryPanel {
 
       const label = document.createElement("div");
       label.className = "history-label";
-      label.textContent = entry.isSeed ? entry.label : `↳ ${entry.label}`;
+      label.textContent = entry.isSeed ? entry.label : `└─► ${entry.label}`;
       item.appendChild(label);
 
       // Show the resulting shape's name beneath operations (the seed line already
