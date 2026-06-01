@@ -124,8 +124,10 @@ function edgeFaceNormals(h: HalfEdge): Vector3[] {
  * baseT·0.5 (i.e. the current truncation), so pressing Shift changes nothing until
  * the mouse moves. Increasing the skew then slides the outer cut vertices out toward
  * F_OUT and the inner ones in toward F_IN. Whether the result welds (partial snub vs
- * snub) is decided by the caller via the `weld` flag at commit — inherited from
- * whether the base truncation reached a full rectify.
+ * snub) is decided purely by how far the skew is taken: only at the very end (t=1),
+ * where the outer and inner cut vertices coincide (F_OUT + F_IN = 1), do they weld —
+ * so a partial drag commits a partial snub and a full drag commits the full snub,
+ * matching what the geometry already shows. (Independent of the base truncation level.)
  *
  * Chirality is LIVE: the two mirror forms are precomputed (the two face 2-colorings);
  * `snap` picks whichever makes the edge nearest the cursor "outer", so aiming at an

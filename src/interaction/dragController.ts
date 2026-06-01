@@ -54,7 +54,7 @@ interface Drag {
   // base's then-current level so the skew interpolates out of it. Rebuilt on each press.
   shift: PlanSlot | null; // null when snub/gyro is unavailable for this handle
   shiftHeld: boolean; // live Shift state; selects which plan is active
-  frozenWeld: boolean; // base's weld state at Shift-press → the snub/gyro commit weld
+  frozenWeld: boolean; // base's weld state at Shift-press → the gyro commit weld (snub welds by skew)
   lastRay: Ray | null; // last pick ray, so a Shift toggle can re-preview in place
   kind: MarkerKind;
   id: number;
@@ -379,10 +379,17 @@ export class DragController {
     let tEff = snap.t;
     let weld: boolean;
     if (usingShift) {
-      // Snub/gyro: the skew is in [0,1] and the topology is fixed; whether it welds
-      // (partial vs full) is inherited from the base, not from reaching the end.
+      // Snub/gyro: the skew is in [0,1] and the topology is fixed.
       tEff = Math.max(0, Math.min(1, snap.t));
-      weld = d.frozenWeld;
+      if (active.plan.kind === "snub") {
+        // Snub welds (full vs partial) based purely on whether the skew is extended
+        // all the way to the end — where the outer and inner cut vertices coincide —
+        // matching what the geometry already shows, not on the frozen base level.
+        weld = tEff >= 1;
+      } else {
+        // Gyro: whether it welds is inherited from the base, not from reaching the end.
+        weld = d.frozenWeld;
+      }
     } else {
       // No end magnetism: t follows the cursor directly. Only the very end welds
       // (rectify / join); if that end is disabled, stop just short of it.

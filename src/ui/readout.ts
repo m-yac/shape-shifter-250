@@ -28,8 +28,8 @@ function sameSet(a: Set<number>, b: Set<number>): boolean {
 
 /**
  * The present-participle verb shown while a drag is in progress, keyed by the
- * operation and whether the drag has reached its welded max end. Snub/gyro read
- * the same regardless of weld.
+ * operation and whether the drag has reached its welded max end (for snub, that's
+ * the fully-extended skew; for gyro it's inherited from the base level).
  */
 const DRAG_VERB: Record<OperationKind, [unwelded: string, welded: string]> = {
   truncate: ["Truncating", "Rectifying"],
