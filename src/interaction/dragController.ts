@@ -635,7 +635,7 @@ export class DragController {
 
   private onIsoResult(id: number, result: boolean): void {
     if (id !== this.isoReq || !result || !this.lastSignature) return;
-    this.readout.setVerified(true);
+    // this.readout.setVerified(true);
     if (config.features.logToConsole) console.log(`[identify] verified ✓ ${this.lastName}`);
   }
 

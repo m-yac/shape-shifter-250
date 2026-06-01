@@ -57,7 +57,7 @@ export class Readout {
   // Non-null only while a drag is live; `count` is the participating subset size,
   // or null when the operation affects every element of its kind (the whole solid).
   private drag: { kind: OperationKind; weld: boolean; count: number | null, t: number } | null = null;
-  private verified: boolean = false;
+  // private verified: boolean = false;
   private invalid: boolean = false;
   private solving: boolean = false;
   // The top-left SELECTION box stays hidden until the first edit (like the SHAPES
@@ -161,7 +161,7 @@ export class Readout {
     this.selection = new Set();
     this.selectionKind = null;
     this.drag = null;
-    this.verified = false;
+    // this.verified = false;
     this.invalid = false;
     this.solving = false;
     this.hide();
@@ -255,10 +255,10 @@ export class Readout {
     this.show();
   }
 
-  setVerified(verified: boolean): void {
-    this.verified = verified;
-    this.show();
-  }
+  // setVerified(verified: boolean): void {
+  //   this.verified = verified;
+  //   this.show();
+  // }
 
   setHint(text: string): void {
     if (!this.polyEl || !this.selEl || !config.features.textReadout) return;
