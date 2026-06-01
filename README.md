@@ -2,7 +2,9 @@
 
 An in-progress game(?) where you try to build as many polyhedra you can using interactive versions of Conway operations.
 
-**Warning:** Currently, *almost all of the code in this repo is AI-generated* - with the bits I wrote mostly being the strings in `src/config.ts` and some of the functions in `src/main.ts` and `src/readout.ts`. The core of the app was generated using my following design notes as reference (with some additional nudging needed around repository structure and visuals):
+**Warning:** Currently, *almost all of the code in this repo is AI-generated*. The core of the app is based on the notes I wrote below, but the visuals were developed in a more iterative fashion (since I ended up needing to see some examples to decide what I wanted to go with for this first version). Despite this, some of the text is my own – especially the strings in `src/config.ts`, but also some of the code in `src/main.ts` and `src/ui/readout.ts` (among a few others – since sometimes it was easier and faster to just go and fix something myself).
+
+### Original Notes
 
 Clicking and dragging a degree-n vertex inwards along a connected edge:
 - Truncate (variable): break up vertex into n many degree-3 vertices surrounding an n-gon face

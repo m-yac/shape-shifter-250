@@ -1,6 +1,6 @@
 /**
  * =============================================================================
- *  POLYHEDRA CRAFT — CONFIGURATION
+ *  SHAPE SHIFTER 250 — CONFIGURATION
  * =============================================================================
  *
  *  This is the single source of truth for every tunable value and on/off switch
@@ -251,7 +251,7 @@ export const config = {
     // Remember discoveries across page reloads (localStorage). Off by default so
     // the experience is reproducible; turn on to make discoveries permanent.
     persist: false,
-    storageKey: "polyhedra-craft:discovered",
+    storageKey: "shape-shifter-250:discovered",
 
     // Shapes you "already have" at launch and so never trigger a discovery. The
     // boot story finds exactly the tetrahedron (1/250), so it starts discovered.
