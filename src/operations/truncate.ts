@@ -1,4 +1,4 @@
-import { Vector3, Ray } from "three";
+import { Vector3, Ray, Color } from "three";
 import {
   type Mesh,
   type HalfEdge,
@@ -6,9 +6,12 @@ import {
   faceVertices,
 } from "../geometry/HalfEdge";
 import { type Polyhedron, faceNormalHE, faceCentroidHE } from "../geometry/polyhedron";
+import { type ColorSet, edgeKey } from "../geometry/colors";
 import { type MorphPlan } from "./types";
 import { weldVertexPairs } from "./weld";
+import { lerpFaceColors } from "./colorUtil";
 import { closestLineParam, distancePointToRay } from "../util/lines";
+import { config } from "../config";
 
 /** A point is "in view" if any of the given (outward) normals faces the camera. */
 export type InViewTest = (point: Vector3, normals: Vector3[]) => boolean;
@@ -140,6 +143,58 @@ export function buildTruncate(
     if (a !== undefined && b !== undefined) weldPairs.push([a, b]);
   }
 
+  // ---- Colors ----------------------------------------------------------------
+  // New face per truncated vertex ← that vertex's color; surviving original faces
+  // keep their face color. New cut vertices ← the original edge they sit on; kept
+  // vertices keep their color. New edges (the exposed n-gon perimeters) ←
+  // 1 + max over everything adjacent to the original vertex.
+  const old = poly.colors;
+  const vertexColor: number[] = new Array(vertexCount);
+  for (const he of dcel.halfedges) {
+    const i = cutIndex.get(he.id);
+    if (i !== undefined) {
+      vertexColor[i] = old.edge.get(edgeKey(he.origin.id, he.next.origin.id)) ?? 0;
+    }
+  }
+  for (const v of dcel.vertices) {
+    const i = keepIndex.get(v.id);
+    if (i !== undefined) vertexColor[i] = old.vertex[v.id];
+  }
+
+  // Per preview face: (a) original faces first, then (b) the exposed n-gons.
+  const faceColor: number[] = [];
+  for (const f of dcel.faces) faceColor.push(old.face[f.id]);
+  for (const v of dcel.vertices) {
+    if (truncated.has(v.id)) faceColor.push(old.vertex[v.id]);
+  }
+  // Truncate faces don't change color during the drag (the exposed n-gon emerges
+  // already at the vertex color), so start == end.
+  const faceStart = faceColor.slice();
+
+  const edgeColor = new Map<string, number>();
+  // (i) n-gon perimeter edges — new edges around each truncated vertex.
+  for (const v of dcel.vertices) {
+    if (!truncated.has(v.id)) continue;
+    const mp = config.render.palette.length;
+    const ring = outgoingHalfEdges(v).map((h) => cutIndex.get(h.id)!);
+    for (let k = 0; k < ring.length; k++) {
+      edgeColor.set(edgeKey(ring[k], ring[(k + 1) % ring.length]), mp);
+    }
+  }
+  // (ii) surviving original-edge remnants — keep their original edge color.
+  for (const he of dcel.halfedges) {
+    if (!he.twin || he.id >= he.twin.id) continue; // once per undirected edge
+    const u = he.origin.id;
+    const w = he.next.origin.id;
+    const endU = truncated.has(u) ? cutIndex.get(he.id)! : keepIndex.get(u)!;
+    const endW = truncated.has(w) ? cutIndex.get(he.twin.id)! : keepIndex.get(w)!;
+    edgeColor.set(edgeKey(endU, endW), old.edge.get(edgeKey(u, w)) ?? 0);
+  }
+
+  function previewFaceColors(t: number): Color[] {
+    return lerpFaceColors(faceStart, faceColor, t);
+  }
+
   // ---- Snapping: pick the closest incident edge and project the ray onto it --
   function snap(ray: Ray): {
     t: number;
@@ -152,15 +207,29 @@ export function buildTruncate(
     return { t, point: e.point, highlight: { a: e.point.clone(), b: e.mid.clone() } };
   }
 
-  function commit(t: number, weld: boolean): Mesh {
+  function commit(t: number, weld: boolean): { mesh: Mesh; colors: ColorSet } {
     const mesh: Mesh = {
       vertices: positions(t),
       faces: previewFaces.map((f) => f.slice()),
     };
-    return weld ? weldVertexPairs(mesh, weldPairs) : mesh;
+    const colors: ColorSet = {
+      vertex: vertexColor.slice(),
+      face: faceColor.slice(),
+      edge: new Map(edgeColor),
+    };
+    return weld ? weldVertexPairs(mesh, weldPairs, colors) : { mesh, colors };
   }
 
-  return { kind: "truncate", previewFaces, positions, snap, commit };
+  return {
+    kind: "truncate",
+    previewFaces,
+    positions,
+    previewFaceColors,
+    previewEdgeColors: edgeColor,
+    vanishingEdges: weldPairs,
+    snap,
+    commit,
+  };
 }
 
 /**

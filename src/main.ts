@@ -16,6 +16,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { config } from "./config";
 import { getSeed } from "./geometry/seeds";
 import { Polyhedron } from "./geometry/polyhedron";
+import { seedColors } from "./geometry/colors";
 import { CameraRig } from "./interaction/camera";
 import { SceneView } from "./render/sceneView";
 import { DragController } from "./interaction/dragController";
@@ -110,8 +111,14 @@ screen.onLayout((s) => {
 // The status readout (a box-framed popup) self-places into the bottom-left
 // corner on every layout; see ui/readout.ts.
 
+/** A fresh seed polyhedron with its initial element colors. */
+function seedPoly(name: string): Polyhedron {
+  const mesh = getSeed(name);
+  return new Polyhedron(mesh, seedColors(mesh));
+}
+
 let currentSeed: string = config.seeds.initial;
-const initialPoly = new Polyhedron(getSeed(currentSeed));
+const initialPoly = seedPoly(currentSeed);
 rig.frame(new Vector3());
 
 let controller: DragController | null = null;
@@ -220,11 +227,11 @@ window.addEventListener("keydown", (e) => {
     const idx = parseInt(e.key, 10) - 1;
     if (idx < enabled.length) {
       currentSeed = enabled[idx];
-      controller.load(new Polyhedron(getSeed(currentSeed)), seedLabel(currentSeed));
+      controller.load(seedPoly(currentSeed), seedLabel(currentSeed));
       rig.frame(new Vector3());
     }
   } else if (e.key.toLowerCase() === config.seeds.resetKey) {
-    controller.load(new Polyhedron(getSeed(currentSeed)), seedLabel(currentSeed));
+    controller.load(seedPoly(currentSeed), seedLabel(currentSeed));
     rig.frame(new Vector3());
   }
 });

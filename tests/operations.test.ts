@@ -8,6 +8,7 @@ import { buildSnub, canSnub } from "../src/operations/snub";
 import { buildGyro, canGyro } from "../src/operations/gyro";
 import { computeSignature } from "../src/identify/configurations";
 import { weldVertexPairs } from "../src/operations/weld";
+import { uniformColors } from "../src/geometry/colors";
 import { Vector3, Ray } from "three";
 
 const cube = () => new Polyhedron(getSeed("cube"));
@@ -22,7 +23,7 @@ const faceOrderCounts = (faces: number[][]): Record<number, number> => {
 
 describe("truncate / rectify", () => {
   it("intermediate truncation of the cube is the truncated cube (3.8.8)", () => {
-    const mesh = buildTruncate(cube(), 0, null).commit(0.5, false);
+    const mesh = buildTruncate(cube(), 0, null).commit(0.5, false).mesh;
     const sig = computeSignature(buildDCEL(mesh));
     expect(sig).toMatchObject({ V: 24, E: 36, F: 14 });
     expect(sig.vertexConfigs).toEqual({ "3.8.8": 24 });
@@ -30,7 +31,7 @@ describe("truncate / rectify", () => {
   });
 
   it("welded max (rectify) of the cube is the cuboctahedron (3.4.3.4)", () => {
-    const mesh = buildTruncate(cube(), 0, null).commit(1, true);
+    const mesh = buildTruncate(cube(), 0, null).commit(1, true).mesh;
     const sig = computeSignature(buildDCEL(mesh));
     expect(sig).toMatchObject({ V: 12, E: 24, F: 14 });
     expect(sig.vertexConfigs).toEqual({ "3.4.3.4": 12 });
@@ -40,14 +41,14 @@ describe("truncate / rectify", () => {
 
 describe("kis / join", () => {
   it("intermediate kis of the cube is the tetrakis hexahedron", () => {
-    const mesh = buildKis(cube(), 0, null).commit(0.5, false);
+    const mesh = buildKis(cube(), 0, null).commit(0.5, false).mesh;
     const c = counts(buildDCEL(mesh));
     // 8 original + 6 apex vertices; every face a triangle (6 faces × 4 tris)
     expect(c).toEqual({ V: 14, E: 36, F: 24 });
   });
 
   it("welded max (join) of the cube is the rhombic dodecahedron (3.4.3.4 faces)", () => {
-    const mesh = buildKis(cube(), 0, null).commit(1, true);
+    const mesh = buildKis(cube(), 0, null).commit(1, true).mesh;
     const sig = computeSignature(buildDCEL(mesh));
     expect(sig).toMatchObject({ V: 14, E: 24, F: 12 });
     expect(sig.vertexConfigs).toEqual({ "4.4.4": 8, "4.4.4.4": 6 });
@@ -57,7 +58,7 @@ describe("kis / join", () => {
 
 describe("snub", () => {
   it("intermediate snub of the octahedron (all degree-4 vertices, n=2)", () => {
-    const mesh = buildSnub(octahedron(), 0, null).commit(0.5, false);
+    const mesh = buildSnub(octahedron(), 0, null).commit(0.5, false).mesh;
     const c = counts(buildDCEL(mesh));
     // 24 cut verts (one per half-edge); 8 hexagons (truncated tris) + 12 ear tris.
     expect(c).toEqual({ V: 24, E: 42, F: 20 });
@@ -65,7 +66,7 @@ describe("snub", () => {
   });
 
   it("welded max (snub) of the octahedron is the icosahedron (3^5)", () => {
-    const mesh = buildSnub(octahedron(), 0, null).commit(1, true);
+    const mesh = buildSnub(octahedron(), 0, null).commit(1, true).mesh;
     const sig = computeSignature(buildDCEL(mesh));
     expect(sig).toMatchObject({ V: 12, E: 30, F: 20 });
     expect(sig.vertexConfigs).toEqual({ "3.3.3.3.3": 12 });
@@ -87,7 +88,7 @@ describe("snub", () => {
   it("accepts a connected partial vertex selection", () => {
     const poly = octahedron();
     const near = outgoingHalfEdges(poly.dcel.vertices[0])[0].next.origin.id;
-    const mesh = buildSnub(poly, 0, new Set([0, near])).commit(0.5, false);
+    const mesh = buildSnub(poly, 0, new Set([0, near])).commit(0.5, false).mesh;
     const c = counts(buildDCEL(mesh));
     expect(c.V - c.E + c.F).toBe(2); // valid closed manifold
   });
@@ -112,7 +113,7 @@ describe("snub", () => {
 
 describe("gyro", () => {
   it("intermediate gyro of the cube (all 4-gon faces, n=2)", () => {
-    const mesh = buildGyro(cube(), 0, null).commit(0.5, false);
+    const mesh = buildGyro(cube(), 0, null).commit(0.5, false).mesh;
     const c = counts(buildDCEL(mesh));
     // 8 originals + 2 peripherals per face (no apex at n=2); 2 quads + 2 tris / face.
     expect(c).toEqual({ V: 20, E: 42, F: 24 });
@@ -122,8 +123,8 @@ describe("gyro", () => {
   it("closes on hexagonal (n=3) faces: gyro of the truncated octahedron", () => {
     // Truncated octahedron: 8 hexagons + 6 squares, all even-sided. Exercises the
     // n>=3 pentagon+triangle tiling (the n=2 cube test only hits the collapsed path).
-    const truncOcta = buildTruncate(octahedron(), 0, null).commit(0.5, false);
-    const mesh = buildGyro(new Polyhedron(truncOcta), 0, null).commit(0.5, false);
+    const truncOcta = buildTruncate(octahedron(), 0, null).commit(0.5, false).mesh;
+    const mesh = buildGyro(new Polyhedron(truncOcta), 0, null).commit(0.5, false).mesh;
     const c = counts(buildDCEL(mesh)); // valid Euler counts ⇒ a closed manifold
     expect(c).toEqual({ V: 68, E: 138, F: 72 });
     // 24 pentagons (3 per hexagon) + 12 quads (2 per square) + 36 triangles.
@@ -131,7 +132,7 @@ describe("gyro", () => {
   });
 
   it("welded max (gyro) of the cube is the dodecahedron (5^3)", () => {
-    const mesh = buildGyro(cube(), 0, null).commit(1, true);
+    const mesh = buildGyro(cube(), 0, null).commit(1, true).mesh;
     const sig = computeSignature(buildDCEL(mesh));
     expect(sig).toMatchObject({ V: 20, E: 30, F: 12 });
     expect(sig.vertexConfigs).toEqual({ "5.5.5": 20 });
@@ -156,7 +157,7 @@ describe("gyro", () => {
   it("accepts a connected partial face selection", () => {
     const poly = cube();
     const near = poly.dcel.faces[0].halfedge.twin!.face.id;
-    const mesh = buildGyro(poly, 0, new Set([0, near])).commit(0.5, false);
+    const mesh = buildGyro(poly, 0, new Set([0, near])).commit(0.5, false).mesh;
     const c = counts(buildDCEL(mesh));
     expect(c.V - c.E + c.F).toBe(2); // valid closed manifold
   });
@@ -174,7 +175,7 @@ describe("gyro", () => {
   it("chirality follows the dragged edge: adjacent edges give mirror forms", () => {
     // Gyro of the truncated octahedron (n>=3, has real centre vertices). Snapping a
     // ray onto the lines toward two adjacent boundary edges picks opposite twists.
-    const base = buildTruncate(octahedron(), 0, null).commit(0.5, false);
+    const base = buildTruncate(octahedron(), 0, null).commit(0.5, false).mesh;
     const poly = new Polyhedron(base);
     const plan = buildGyro(poly, 0, null);
     const f = poly.dcel.faces[0];
@@ -217,7 +218,7 @@ describe("operation availability (canSnub / canGyro)", () => {
     // The 4 hexagons of the truncated tetrahedron: connected and all even-sided, but
     // the triangles they share pin the vertex coloring into an odd cycle, so there's
     // no coherent chirality → gyro is refused (and buildGyro throws).
-    const tt = buildTruncate(new Polyhedron(getSeed("tetrahedron")), 0, null).commit(0.5, false);
+    const tt = buildTruncate(new Polyhedron(getSeed("tetrahedron")), 0, null).commit(0.5, false).mesh;
     const poly = new Polyhedron(tt);
     const hexes = new Set<number>();
     poly.faces.forEach((f, i) => {
@@ -244,9 +245,9 @@ describe("weldVertexPairs", () => {
         [0, 2, 3],
       ],
     };
-    const welded = weldVertexPairs(mesh, [[1, 3]]);
-    expect(welded.vertices.length).toBe(3);
+    const welded = weldVertexPairs(mesh, [[1, 3]], uniformColors(mesh, 0, 0, 0));
+    expect(welded.mesh.vertices.length).toBe(3);
     // each triangle loses the welded duplicate and stays a triangle
-    expect(welded.faces.every((f) => f.length === 3)).toBe(true);
+    expect(welded.mesh.faces.every((f) => f.length === 3)).toBe(true);
   });
 });

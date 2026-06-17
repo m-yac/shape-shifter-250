@@ -1,8 +1,10 @@
-import { Vector3, Ray } from "three";
+import { Vector3, Ray, Color } from "three";
 import { type Mesh, type HEFace } from "../geometry/HalfEdge";
 import { type Polyhedron } from "../geometry/polyhedron";
 import { faceCentroidHE, faceNormalHE } from "../geometry/polyhedron";
+import { type ColorSet, edgeKey } from "../geometry/colors";
 import { type MorphPlan } from "./types";
+import { faceMaxPlus1, lerpFaceColors } from "./colorUtil";
 import { closestLineParam } from "../util/lines";
 
 /** Smallest strictly-positive root of A h² + B h + C, or null. */
@@ -145,15 +147,67 @@ export function buildKis(
     }
   }
 
+  // ---- Colors (dual of truncate) --------------------------------------------
+  // New apex vertex ← its face's color; original vertices keep their color. New
+  // pyramid faces ← the original (base) edge they straddle, animating out of the
+  // flat face color. New (lateral) edges ← 1 + max adjacent to the original face.
+  const old = poly.colors;
+  const vertexColor: number[] = new Array(V + apexCount);
+  for (let i = 0; i < V; i++) vertexColor[i] = old.vertex[i];
+  for (const kf of kfaces.values()) vertexColor[kf.apex] = old.face[kf.id];
+
+  const faceColor: number[] = [];
+  const faceStart: number[] = [];
+  for (const f of dcel.faces) {
+    const loop = faceLoop(f);
+    const kf = kfaces.get(f.id);
+    if (!kf) {
+      faceColor.push(old.face[f.id]);
+      faceStart.push(old.face[f.id]);
+      continue;
+    }
+    for (let i = 0; i < loop.length; i++) {
+      const base = old.edge.get(edgeKey(loop[i], loop[(i + 1) % loop.length])) ?? 0;
+      faceColor.push(base); // each triangle → its base edge color (rhombus at Join)
+      faceStart.push(old.face[f.id]); // ...emerging from the flat face color
+    }
+  }
+
+  const edgeColor = new Map<string, number>();
+  for (const [k, c] of old.edge) edgeColor.set(k, c); // original edges keep their color
+  for (const f of dcel.faces) {
+    const kf = kfaces.get(f.id);
+    if (!kf) continue;
+    const mp = faceMaxPlus1(f, old);
+    for (const u of faceLoop(f)) edgeColor.set(edgeKey(u, kf.apex), mp);
+  }
+
+  // Base edges that dissolve at Join (shared by two kissed faces).
+  const joinDissolve: Array<[number, number]> = [];
+  for (const he of dcel.halfedges) {
+    if (!he.twin || he.id >= he.twin.id) continue;
+    if (kfaces.has(he.face.id) && kfaces.has(he.twin.face.id)) {
+      joinDissolve.push([he.origin.id, he.next.origin.id]);
+    }
+  }
+
+  function previewFaceColors(t: number): Color[] {
+    return lerpFaceColors(faceStart, faceColor, t);
+  }
+
   // Join topology: merge adjacent kissed-face triangles across each shared edge
-  // into one quad; triangles bordering a non-kissed face stay as triangles.
-  function joinFaces(): number[][] {
+  // into one quad; triangles bordering a non-kissed face stay as triangles. Each
+  // merged/border face ← the original (base) edge it replaces; untouched faces
+  // keep their color.
+  function joinFaces(): { faces: number[][]; faceColors: number[] } {
     const faces: number[][] = [];
+    const faceColors: number[] = [];
     const emitted = new Set<number>();
     for (const f of dcel.faces) {
       const kf = kfaces.get(f.id);
       if (!kf) {
         faces.push(faceLoop(f));
+        faceColors.push(old.face[f.id]);
         continue;
       }
       let h = f.halfedge;
@@ -161,6 +215,7 @@ export function buildKis(
       do {
         const a = h.origin.id;
         const b = h.next.origin.id;
+        const baseColor = old.edge.get(edgeKey(a, b)) ?? 0;
         const g = h.twin!.face;
         const kg = kfaces.get(g.id);
         if (kg) {
@@ -168,14 +223,23 @@ export function buildKis(
           if (!emitted.has(key)) {
             emitted.add(key);
             faces.push([a, kf.apex, b, kg.apex]); // the merged rhombus/kite
+            faceColors.push(baseColor);
           }
         } else {
           faces.push([a, b, kf.apex]); // border triangle (partial selection)
+          faceColors.push(baseColor);
         }
         h = h.next;
       } while (h !== start);
     }
-    return faces;
+    return { faces, faceColors };
+  }
+
+  // Edge colors for the Join form: the un-welded edges minus the dissolved bases.
+  function joinEdges(): Map<string, number> {
+    const edge = new Map(edgeColor);
+    for (const [a, b] of joinDissolve) edge.delete(edgeKey(a, b));
+    return edge;
   }
 
   // Snap the ray to the dragged face's outward normal line.
@@ -209,12 +273,32 @@ export function buildKis(
     };
   }
 
-  function commit(t: number, weld: boolean): Mesh {
+  function commit(t: number, weld: boolean): { mesh: Mesh; colors: ColorSet } {
+    if (weld) {
+      const { faces, faceColors } = joinFaces();
+      return {
+        mesh: { vertices: positions(t), faces },
+        colors: { vertex: vertexColor.slice(), face: faceColors, edge: joinEdges() },
+      };
+    }
     return {
-      vertices: positions(t),
-      faces: weld ? joinFaces() : previewFaces.map((f) => f.slice()),
+      mesh: { vertices: positions(t), faces: previewFaces.map((f) => f.slice()) },
+      colors: {
+        vertex: vertexColor.slice(),
+        face: faceColor.slice(),
+        edge: new Map(edgeColor),
+      },
     };
   }
 
-  return { kind: "kis", previewFaces, positions, snap, commit };
+  return {
+    kind: "kis",
+    previewFaces,
+    positions,
+    previewFaceColors,
+    previewEdgeColors: edgeColor,
+    vanishingEdges: joinDissolve,
+    snap,
+    commit,
+  };
 }

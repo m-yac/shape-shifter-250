@@ -2,6 +2,9 @@ import { PerspectiveCamera, type Vector3 } from "three";
 import { ArcballControls } from "three/examples/jsm/controls/ArcballControls.js";
 import { config } from "../config";
 
+const CAMERA_XY = Math.cos(0.4 * Math.PI);
+const CAMERA_Z  = Math.sin(0.4 * Math.PI);
+
 /**
  * Perspective camera + orbit controls. Both the left and right buttons orbit the
  * shape; the wheel zooms. When the left button actually grabs a vertex / face,
@@ -15,7 +18,7 @@ export class CameraRig {
   constructor(domElement: HTMLElement) {
     // Aspect is a placeholder; the screen's first layout sets it via setAspect.
     this.camera = new PerspectiveCamera(config.camera.fov, 1, 0.01, 1000);
-    this.camera.position.set(0, 0, config.camera.startDistance);
+    this.camera.position.set(config.camera.startDistance, 0, config.camera.startDistance);
 
     this.controls = new ArcballControls(this.camera, domElement);
     this.controls.rotateSpeed = config.camera.rotateSpeed;
@@ -35,7 +38,7 @@ export class CameraRig {
     if (!config.camera.autoFrame) return;
     const d = config.camera.startDistance;
     const dir = this.camera.position.clone().normalize();
-    if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1);
+    dir.set(CAMERA_XY, CAMERA_XY, CAMERA_Z);
     this.camera.position.copy(dir.multiplyScalar(d));
     // this.controls.target.set(0, 0, 0);
     this.controls.update();

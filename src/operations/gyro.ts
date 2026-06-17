@@ -1,4 +1,4 @@
-import { Vector3, Ray } from "three";
+import { Vector3, Ray, Color } from "three";
 import {
   type Mesh,
   type DCEL,
@@ -11,9 +11,11 @@ import {
   faceCentroidHE,
   faceNormalHE,
 } from "../geometry/polyhedron";
+import { type ColorSet, edgeKey } from "../geometry/colors";
 import { type MorphPlan } from "./types";
 import { type InViewTest } from "./truncate";
 import { joinHeight } from "./kis";
+import { faceMaxPlus1, lerpFaceColors } from "./colorUtil";
 import { closestLineParam, distancePointToRay } from "../util/lines";
 
 // How far (as a fraction of the centre → edge-midpoint line) the peripheral
@@ -157,6 +159,7 @@ export function buildGyro(
 ): MorphPlan {
   const dcel = poly.dcel;
   const V = dcel.vertices.length;
+  const old = poly.colors;
 
   const gyred = new Set<number>(
     selected && selected.size > 0 ? selected : dcel.faces.map((f) => f.id),
@@ -219,14 +222,26 @@ export function buildGyro(
     gfaces: GFace[];
     previewFaces: number[][];
     vertexCount: number;
+    vertexColor: number[];
+    faceColor: number[];
+    faceStart: number[];
+    edgeColor: Map<string, number>;
   } {
     const gfaces: GFace[] = [];
     const previewFaces: number[][] = [];
+    const faceColor: number[] = [];
+    const faceStart: number[] = [];
+    const vertexColor: number[] = [];
+    for (let i = 0; i < V; i++) vertexColor[i] = old.vertex[i];
+    const ownerFace = new Map<number, number>(); // new vertex idx → its gyred face id
+    const centerEdges = new Map<string, number>(); // centre spokes (C↔q) → face color
     let idx = V;
 
     for (const f of dcel.faces) {
       if (!gyred.has(f.id)) {
         previewFaces.push(faceLoop(f)); // untouched face
+        faceColor.push(old.face[f.id]);
+        faceStart.push(old.face[f.id]);
         continue;
       }
       const bh = faceHalfEdges(f);
@@ -249,32 +264,67 @@ export function buildGyro(
       const apex = apexOf(f);
       const hasCenter = n >= 3;
       const center = hasCenter ? idx++ : -1;
+      if (hasCenter) {
+        vertexColor[center] = old.face[f.id]; // the inner centre keeps the face color
+        ownerFace.set(center, f.id);
+      }
       const qIdx: number[] = [];
+      // The centre vertex replaces the original face, so its spoke edges (C↔q)
+      // take the face color (matching the centre vertex itself).
+      const spokeColor = old.face[f.id];
       const qTarget: Vector3[] = [];
       const qHe: HalfEdge[] = [];
       for (let j = 0; j < n; j++) {
-        qIdx.push(idx++);
+        const q = idx++;
+        qIdx.push(q);
         // q_j sits over the boundary edge (p_{2j-1}, p_{2j}); head toward its midpoint.
         const he = bh[(s + 2 * j - 1 + m) % m];
         qHe.push(he);
         const a = dcel.vertices[P[(2 * j - 1 + m) % m]].position;
         const b = dcel.vertices[P[2 * j]].position;
         qTarget.push(a.clone().add(b).multiplyScalar(0.5));
+        vertexColor[q] = old.edge.get(edgeKey(he.origin.id, he.next.origin.id)) ?? 0;
+        ownerFace.set(q, f.id);
+      }
+      if (hasCenter) {
+        for (const q of qIdx) centerEdges.set(edgeKey(center, q), spokeColor);
       }
 
       // Tiling: per j, a pentagon (or quad when n=2) meeting at C and a triangle.
+      // Each tiling face ← the original edge it dissolves across at full gyro,
+      // emerging from the flat face color.
       for (let j = 0; j < n; j++) {
         const pent = hasCenter
           ? [center, qIdx[j], P[2 * j], P[2 * j + 1], qIdx[(j + 1) % n]]
           : [qIdx[j], P[2 * j], P[2 * j + 1], qIdx[(j + 1) % n]];
         previewFaces.push(pent);
+        faceColor.push(old.edge.get(edgeKey(P[2 * j], P[2 * j + 1])) ?? 0);
+        faceStart.push(old.face[f.id]);
         previewFaces.push([qIdx[(j + 1) % n], P[2 * j + 1], P[(2 * j + 2) % m]]);
+        faceColor.push(old.edge.get(edgeKey(P[2 * j + 1], P[(2 * j + 2) % m])) ?? 0);
+        faceStart.push(old.face[f.id]);
       }
 
       gfaces.push({ faceId: f.id, center, apex, qIdx, qTarget, qHe });
     }
 
-    return { gfaces, previewFaces, vertexCount: idx };
+    // Original edges keep their color; the centre spokes (C↔q) take the face
+    // color (set above); every other new edge (q↔boundary, internal) ← 1 + max
+    // adjacent to the owning original face.
+    const edgeColor = new Map(old.edge);
+    for (const [k, c] of centerEdges) edgeColor.set(k, c);
+    for (const loop of previewFaces) {
+      for (let i = 0; i < loop.length; i++) {
+        const a = loop[i];
+        const b = loop[(i + 1) % loop.length];
+        const key = edgeKey(a, b);
+        if (edgeColor.has(key)) continue;
+        const fid = ownerFace.get(a) ?? ownerFace.get(b);
+        if (fid !== undefined) edgeColor.set(key, faceMaxPlus1(dcel.faces[fid], old));
+      }
+    }
+
+    return { gfaces, previewFaces, vertexCount: idx, vertexColor, faceColor, faceStart, edgeColor };
   }
 
   const variants = ([0, 1] as const).map((startColor) => {
@@ -283,6 +333,15 @@ export function buildGyro(
     return { ...built, dragged };
   });
   let currentVariant = 0;
+
+  function previewFaceColors(_t: number): Color[] {
+    const va = variants[currentVariant];
+    // A gyro freezes a kis at level `baseT`, whose faces were already interpolated
+    // face→edge by that much. The skew only changes geometry/chirality, NOT the kis
+    // level, so the colors stay put at `baseT` (no change while gyro-ing); the
+    // release fade then carries them the rest of the way to the committed colors.
+    return lerpFaceColors(va.faceStart, va.faceColor, baseT);
+  }
 
   function positions(skew: number): Vector3[] {
     const variant = variants[currentVariant];
@@ -301,16 +360,22 @@ export function buildGyro(
   // ---- Welded max: dissolve every original edge shared by two gyred faces ---------
   // Each tiling face owns exactly one such boundary edge; across it sit a
   // pentagon/quad and a triangle, which merge into one larger face.
-  const edgeKey = (a: number, b: number) => (a < b ? `${a}_${b}` : `${b}_${a}`);
   const dissolve = new Set<string>();
+  const dissolveList: Array<[number, number]> = [];
   for (const he of dcel.halfedges) {
     if (!he.twin || he.id >= he.twin.id) continue;
     if (gyred.has(he.face.id) && gyred.has(he.twin.face.id)) {
       dissolve.add(edgeKey(he.origin.id, he.next.origin.id));
+      dissolveList.push([he.origin.id, he.next.origin.id]);
     }
   }
 
-  function weldedFaces(faces: number[][]): number[][] {
+  // Merge the tiling faces across each dissolved edge; the merged face ← that
+  // original edge's color, untouched faces keep theirs.
+  function weldedFaces(
+    faces: number[][],
+    faceColorsIn: number[],
+  ): { faces: number[][]; faceColors: number[] } {
     // Where does each dissolved edge appear (as a consecutive original-vertex pair)?
     const occ = new Map<string, Array<{ fi: number; i: number }>>();
     for (let fi = 0; fi < faces.length; fi++) {
@@ -325,7 +390,8 @@ export function buildGyro(
     }
     const consumed = new Set<number>();
     const out: number[][] = [];
-    for (const list of occ.values()) {
+    const outColors: number[] = [];
+    for (const [key, list] of occ) {
       if (list.length !== 2) continue; // boundary of a partial selection: leave intact
       const [F, G] = list;
       consumed.add(F.fi);
@@ -339,11 +405,16 @@ export function buildGyro(
       const gRest: number[] = [];
       for (let k = 2; k < lg.length; k++) gRest.push(lg[(G.i + k) % lg.length]);
       out.push([a, ...gRest, b, ...fRest]);
+      const [sa, sb] = key.split("_").map(Number);
+      outColors.push(old.edge.get(edgeKey(sa, sb)) ?? 0);
     }
     for (let fi = 0; fi < faces.length; fi++) {
-      if (!consumed.has(fi)) out.push(faces[fi].slice());
+      if (!consumed.has(fi)) {
+        out.push(faces[fi].slice());
+        outColors.push(faceColorsIn[fi]);
+      }
     }
-    return out;
+    return { faces: out, faceColors: outColors };
   }
 
   // ---- Snapping: the dragged q rides the line from the apex to a boundary-edge
@@ -393,11 +464,24 @@ export function buildGyro(
     };
   }
 
-  function commit(skew: number, weld: boolean): Mesh {
-    const faces = variants[currentVariant].previewFaces;
+  function commit(skew: number, weld: boolean): { mesh: Mesh; colors: ColorSet } {
+    const va = variants[currentVariant];
+    if (weld) {
+      const { faces, faceColors } = weldedFaces(va.previewFaces, va.faceColor);
+      const edge = new Map(va.edgeColor);
+      for (const [a, b] of dissolveList) edge.delete(edgeKey(a, b));
+      return {
+        mesh: { vertices: positions(skew), faces },
+        colors: { vertex: va.vertexColor.slice(), face: faceColors, edge },
+      };
+    }
     return {
-      vertices: positions(skew),
-      faces: weld ? weldedFaces(faces) : faces.map((f) => f.slice()),
+      mesh: { vertices: positions(skew), faces: va.previewFaces.map((f) => f.slice()) },
+      colors: {
+        vertex: va.vertexColor.slice(),
+        face: va.faceColor.slice(),
+        edge: new Map(va.edgeColor),
+      },
     };
   }
 
@@ -406,7 +490,14 @@ export function buildGyro(
     get previewFaces() {
       return variants[currentVariant].previewFaces;
     },
+    get previewEdgeColors() {
+      return variants[currentVariant].edgeColor;
+    },
+    get vanishingEdges() {
+      return dissolveList;
+    },
     positions,
+    previewFaceColors,
     snap,
     commit,
   };

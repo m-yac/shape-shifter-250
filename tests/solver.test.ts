@@ -42,7 +42,7 @@ describe("relaxation solver", () => {
   });
 
   it("does NOT collapse the rhombic dodecahedron (join of cube) to coplanar", () => {
-    const join = new Polyhedron(buildKis(new Polyhedron(getSeed("cube")), 0, null).commit(1, true));
+    const join = new Polyhedron(buildKis(new Polyhedron(getSeed("cube")), 0, null).commit(1, true).mesh);
     const topo = extractTopology(join);
     const { invalid, mesh } = runToCompletion(join);
     expect(invalid).toBe(false);
@@ -57,21 +57,21 @@ describe("relaxation solver", () => {
   it("relaxes the welded gyro of the cube to a valid, planar solid (dodecahedron)", () => {
     // The gyro starting geometry is rough (no closed-form coplanar distance); this is
     // the real check that the relaxer can finish it into a valid, planar solid.
-    const gyro = new Polyhedron(buildGyro(new Polyhedron(getSeed("cube")), 0, null).commit(1, true));
+    const gyro = new Polyhedron(buildGyro(new Polyhedron(getSeed("cube")), 0, null).commit(1, true).mesh);
     const { invalid, mesh } = runToCompletion(gyro);
     expect(invalid).toBe(false);
     expect(planarityError(mesh)).toBeLessThan(5e-3);
   });
 
   it("relaxes the welded snub of the octahedron to a valid, planar solid (icosahedron)", () => {
-    const snub = new Polyhedron(buildSnub(new Polyhedron(getSeed("octahedron")), 0, null).commit(1, true));
+    const snub = new Polyhedron(buildSnub(new Polyhedron(getSeed("octahedron")), 0, null).commit(1, true).mesh);
     const { invalid, mesh } = runToCompletion(snub);
     expect(invalid).toBe(false);
     expect(planarityError(mesh)).toBeLessThan(5e-3);
   });
 
   it("does NOT collapse the tetrakis hexahedron (kis of cube)", () => {
-    const kis = new Polyhedron(buildKis(new Polyhedron(getSeed("cube")), 0, null).commit(0.5, false));
+    const kis = new Polyhedron(buildKis(new Polyhedron(getSeed("cube")), 0, null).commit(0.5, false).mesh);
     const topo = extractTopology(kis);
     const { invalid, mesh } = runToCompletion(kis);
     expect(invalid).toBe(false);

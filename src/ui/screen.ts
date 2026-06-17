@@ -178,8 +178,7 @@ export class Screen {
   layout(): void {
     const { viewportMargin: m, bezel: frame, extraBezelBottom: extraBot, padding: pad } = config.screen;
     const availW = window.innerWidth - 2 * (m + frame + pad);
-    let availH = window.innerHeight - 2 * (m + frame + pad);
-    if (config.letter.enabled) availH -= extraBot;
+    const availH = window.innerHeight - 2 * (m + frame + pad) - extraBot;
     this.width = floorTo(availW, colW);
     this.height = floorTo(availH, rowH);
     this.cols = Math.round(this.width / colW);
@@ -263,10 +262,8 @@ export class Screen {
     document.documentElement.setAttribute("data-pixel-mask", t.pixelMaskStyle);
     root.setProperty("--vignette-opacity", t.vignette ? `${t.vignetteOpacity}` : "0");
     this.bezel.style.padding = `${config.screen.bezel}px`;
-    if (config.letter.enabled) {
-      const botPad = config.screen.bezel + config.screen.extraBezelBottom;
-      this.bezel.style.paddingBottom = `${botPad}px`;
-    }
+    const botPad = config.screen.bezel + config.screen.extraBezelBottom;
+    this.bezel.style.paddingBottom = `${botPad}px`;
   }
 }
 

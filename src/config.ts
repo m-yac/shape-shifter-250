@@ -530,7 +530,7 @@ export const config = {
     rowH: 38, // character cell height (em box 1900/1900 * 38px = line-height)
     viewportMargin: -20, // min gap from the browser edge to the monitor's outer frame
     bezel: 40, // plastic-frame thickness around the glass (always >= this)
-    extraBezelBottom: 80, // space for the letter
+    extraBezelBottom: 50, // space for the buttons and/or letter
     padding: 24, // dark glass margin between the bezel and the lit pixel grid
   },
 
@@ -588,14 +588,32 @@ export const config = {
   // RENDER — minimal, functional look only (no decorative visuals yet).
   // ---------------------------------------------------------------------------
   render: {
-    backgroundColor: 0x10141c, // backlight color 
+    backgroundColor: 0x10141c, // backlight color
 
-    faceColor: 0xffffff, // shape color when everything is good (white)
+    faceColor: 0xffffff, // base/fallback shape color (white); per-face colors come from `palette`
     faceOpacity: 0.92,
-    invalidFaceColor: 0xb04a4a, // faces shown when the solver declares invalid
-    adjustingColor: 0x5b8fb0, // faces while relaxing (NOT yet interactable)
 
-    edgeColor: 0x0c0f15,
+    // Per-element color palette. Element colors are INDICES into this array
+    // (see geometry/colors.ts). Out-of-range indices resolve to `fallbackColor`.
+    // FACES use `palette`; EDGES use `darkPalette` (the same hues, darkened).
+    palette: [
+      0xffffff, // 0 white (the original face color)
+      0xffd24a, // 1 yellow
+      0xe0524a, // 2 red
+      0x4a78e0, // 3 blue
+    ],
+    darkPalette: [
+      0x666666, // 0 dark white / grey
+      0x66541e, // 1 dark yellow
+      0x5a211e, // 2 dark red
+      0x1e305a, // 3 dark blue
+    ],
+    fallbackColor: 0xffffff, // faces: missing / out-of-range index
+    darkFallbackColor: 0x666666, // edges: missing / out-of-range index
+    // How long (seconds) the face colors fade from the drag colors to the final
+    // committed colors after release (also drives the special-solid recolor).
+    colorFadeSeconds: 0.4,
+
     showEdges: true,
 
     // Pickable handle markers. Radii are the on-screen size at the default

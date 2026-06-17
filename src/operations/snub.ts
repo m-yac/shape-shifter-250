@@ -1,4 +1,4 @@
-import { Vector3, Ray } from "three";
+import { Vector3, Ray, Color } from "three";
 import {
   type Mesh,
   type DCEL,
@@ -10,10 +10,13 @@ import {
   faceNormalHE,
   faceCentroidHE,
 } from "../geometry/polyhedron";
+import { type ColorSet, edgeKey } from "../geometry/colors";
 import { type MorphPlan } from "./types";
 import { type InViewTest } from "./truncate";
 import { weldVertexPairs } from "./weld";
+import { lerpFaceColors } from "./colorUtil";
 import { closestLineParam, distancePointToRay } from "../util/lines";
+import { config } from "../config";
 
 // Cut fraction along an edge that an "outer" (triangle-only) cut vertex reaches at
 // t=1, and the smaller fraction the "inner" (n-gon) cut vertices reach. The gap is
@@ -209,6 +212,43 @@ export function buildSnub(
     if (a !== undefined && b !== undefined) weldPairs.push([a, b]);
   }
 
+  // ---- Colors (snub is truncate with the exposed face split inner/outer) ----------
+  // Cut vertices ← the original edge they sit on; kept vertices keep their color.
+  const old = poly.colors;
+  const vertexColor: number[] = new Array(vertexCount);
+  for (const he of dcel.halfedges) {
+    const i = cutIndex.get(he.id);
+    if (i !== undefined) {
+      vertexColor[i] = old.edge.get(edgeKey(he.origin.id, he.next.origin.id)) ?? 0;
+    }
+  }
+  for (const v of dcel.vertices) {
+    const i = keepIndex.get(v.id);
+    if (i !== undefined) vertexColor[i] = old.vertex[v.id];
+  }
+  // Owner vertex + max+1 for each cut vertex, used to color the new edges.
+  const cutOwner = new Map<number, number>();
+  for (const he of dcel.halfedges) {
+    const i = cutIndex.get(he.id);
+    if (i !== undefined) cutOwner.set(i, he.origin.id);
+  }
+  const mpCache = new Map<number, number>();
+  for (const id of snubbed) mpCache.set(id, config.render.palette.length);
+
+  // Surviving original-edge remnants (same as truncate) — keep the original color.
+  function remnantEdges(): Map<string, number> {
+    const edge = new Map<string, number>();
+    for (const he of dcel.halfedges) {
+      if (!he.twin || he.id >= he.twin.id) continue;
+      const u = he.origin.id;
+      const w = he.next.origin.id;
+      const endU = snubbed.has(u) ? cutIndex.get(he.id)! : keepIndex.get(u)!;
+      const endW = snubbed.has(w) ? cutIndex.get(he.twin.id)! : keepIndex.get(w)!;
+      edge.set(edgeKey(endU, endW), old.edge.get(edgeKey(u, w)) ?? 0);
+    }
+    return edge;
+  }
+
   // ---- The two chiral variants ----------------------------------------------------
   // Variant v: a cut vertex is "outer" iff its half-edge's face has color v. Around
   // any snubbed vertex the incident faces alternate color (the coloring is coherent —
@@ -226,8 +266,16 @@ export function buildSnub(
     return outer;
   }
 
-  function buildFaces(outerHe: Set<number>): number[][] {
+  function buildFaces(outerHe: Set<number>): {
+    faces: number[][];
+    faceColor: number[];
+    faceStart: number[];
+    centerEdges: Map<string, number>;
+  } {
     const faces: number[][] = [];
+    const faceColor: number[] = [];
+    const faceStart: number[] = [];
+    const centerEdges = new Map<string, number>(); // central n-gon perimeter → vertex color
 
     // (a) one polygon per original face — identical to truncate's truncated face.
     for (const f of dcel.faces) {
@@ -245,9 +293,13 @@ export function buildSnub(
         h = h.next;
       } while (h !== start);
       faces.push(loop);
+      faceColor.push(old.face[f.id]);
+      faceStart.push(old.face[f.id]);
     }
 
     // (b) per snubbed vertex: central n-gon (inner cut verts) + n ear triangles.
+    // Central n-gon ← the vertex color (the "inner" element keeps it); each ear ←
+    // the original edge it welds across, emerging from the vertex color.
     for (const v of dcel.vertices) {
       if (!snubbed.has(v.id)) continue;
       const H = outgoingHalfEdges(v);
@@ -258,21 +310,67 @@ export function buildSnub(
       for (let k = 0; k < m; k++) {
         if (!outerHe.has(H[k].id)) ngon.push(c[k]); // inner ones
       }
-      if (ngon.length >= 3) faces.push(ngon); // skip the degenerate 2-gon (n=2)
+      if (ngon.length >= 3) {
+        faces.push(ngon); // a 2-gon (n=2) is degenerate as a face, but see below
+        faceColor.push(old.vertex[v.id]);
+        faceStart.push(old.vertex[v.id]);
+      }
+      // The central n-gon replaces the original vertex, so its perimeter takes the
+      // vertex color — including the lone "center line" diagonal when n=2 (where
+      // there is no central face, just the shared edge between the two ears).
+      for (let i = 0; i < ngon.length; i++) {
+        const j = (i + 1) % ngon.length;
+        if (ngon[i] !== ngon[j]) {
+          centerEdges.set(edgeKey(ngon[i], ngon[j]), old.vertex[v.id]);
+        }
+      }
 
       for (let k = 0; k < m; k++) {
         if (!outerHe.has(H[k].id)) continue; // ear around each outer cut vert
         faces.push([c[(k - 1 + m) % m], c[k], c[(k + 1) % m]]);
+        faceColor.push(old.edge.get(edgeKey(H[k].origin.id, H[k].next.origin.id)) ?? 0);
+        faceStart.push(old.vertex[v.id]);
       }
     }
-    return faces;
+    return { faces, faceColor, faceStart, centerEdges };
+  }
+
+  // Edges: surviving original-edge remnants keep their color; the central n-gon
+  // perimeter takes the vertex color (set in buildFaces); every other new edge
+  // (the ears) ← that vertex's max+1.
+  function buildEdges(faces: number[][], centerEdges: Map<string, number>): Map<string, number> {
+    const edge = remnantEdges();
+    for (const [k, c] of centerEdges) edge.set(k, c);
+    for (const loop of faces) {
+      for (let i = 0; i < loop.length; i++) {
+        const a = loop[i];
+        const b = loop[(i + 1) % loop.length];
+        const key = edgeKey(a, b);
+        if (edge.has(key)) continue;
+        const owner = cutOwner.get(a) ?? cutOwner.get(b);
+        if (owner !== undefined) edge.set(key, mpCache.get(owner)!);
+      }
+    }
+    return edge;
   }
 
   const variants = ([0, 1] as const).map((v) => {
     const outerHe = outerSet(v);
-    return { outerHe, previewFaces: buildFaces(outerHe) };
+    const built = buildFaces(outerHe);
+    return {
+      outerHe,
+      previewFaces: built.faces,
+      faceColor: built.faceColor,
+      faceStart: built.faceStart,
+      edgeColor: buildEdges(built.faces, built.centerEdges),
+    };
   });
   let currentVariant = 0;
+
+  function previewFaceColors(t: number): Color[] {
+    const va = variants[currentVariant];
+    return lerpFaceColors(va.faceStart, va.faceColor, t);
+  }
 
   function positions(skew: number): Vector3[] {
     const out: Vector3[] = new Array(vertexCount);
@@ -330,12 +428,18 @@ export function buildSnub(
     return { t, point: best.point, highlight: { a: best.point.clone(), b: best.max } };
   }
 
-  function commit(t: number, weld: boolean): Mesh {
+  function commit(t: number, weld: boolean): { mesh: Mesh; colors: ColorSet } {
+    const va = variants[currentVariant];
     const mesh: Mesh = {
       vertices: positions(t),
-      faces: variants[currentVariant].previewFaces.map((f) => f.slice()),
+      faces: va.previewFaces.map((f) => f.slice()),
     };
-    return weld ? weldVertexPairs(mesh, weldPairs) : mesh;
+    const colors: ColorSet = {
+      vertex: vertexColor.slice(),
+      face: va.faceColor.slice(),
+      edge: new Map(va.edgeColor),
+    };
+    return weld ? weldVertexPairs(mesh, weldPairs, colors) : { mesh, colors };
   }
 
   return {
@@ -343,7 +447,15 @@ export function buildSnub(
     get previewFaces() {
       return variants[currentVariant].previewFaces;
     },
+    get previewEdgeColors() {
+      return variants[currentVariant].edgeColor;
+    },
+    get vanishingEdges() {
+      // Each weld pair is the two cut verts of an edge that collapse at full snub.
+      return weldPairs;
+    },
     positions,
+    previewFaceColors,
     snap,
     commit,
   };

@@ -1,7 +1,12 @@
 import { Vector3, type PerspectiveCamera, type Ray } from "three";
 import { type ArcballControls } from "three/examples/jsm/controls/ArcballControls.js";
 import { Polyhedron } from "../geometry/polyhedron";
-import { type Mesh } from "../geometry/HalfEdge";
+import {
+  detectSpecial,
+  specialColorSet,
+  faceColorsRGB,
+  edgeKey,
+} from "../geometry/colors";
 import { type MorphPlan, type OperationKind } from "../operations/types";
 import { buildTruncate, closestIncidentEdge } from "../operations/truncate";
 import { buildKis } from "../operations/kis";
@@ -290,9 +295,8 @@ export class DragController {
     this.solveStopping = false;
     const topo = extractTopology(poly);
     this.solver = new RelaxSolver(poly.mesh.vertices, topo, this.strategy);
-    // The "adjusting" tint (blue) signals the shape is relaxing and not yet
-    // interactable; the active strategy button shows "half-pressed" meanwhile.
-    this.view.setSurfaceColor(config.render.adjustingColor);
+    // (The shape relaxes underneath the release color-fade; the active strategy
+    // button shows "half-pressed" meanwhile.)
     this.shapes.setSolving(true);
     this.manualHold = hold;
     this.holdDown = hold;
@@ -508,10 +512,22 @@ export class DragController {
     d.weld = weld;
     this.readout.setDrag({ kind: active.plan.kind, weld, count: d.selCount, t: d.t });
     const verts = active.plan.positions(tEff);
+    // At the welded max, hide the edges that are about to collapse so the
+    // about-to-merge faces read as a single face even before welding.
+    const hiddenEdges = weld
+      ? new Set(active.plan.vanishingEdges.map(([a, b]) => edgeKey(a, b)))
+      : undefined;
     // Hide the big hover markers during the drag (as in the non-selection case).
     // When operating on a selection, the selection highlight "sticks around" via
     // the small drag marker + range line instead.
-    this.view.showPreview({ vertices: verts, faces: active.plan.previewFaces });
+    this.view.showPreview(
+      { vertices: verts, faces: active.plan.previewFaces },
+      {
+        faceColors: active.plan.previewFaceColors(tEff),
+        edgeColors: active.plan.previewEdgeColors,
+        hiddenEdges,
+      },
+    );
     const inSelection = d.hasSelection;
     this.view.setDragMarker(
       snap.point, // small sphere on the targeted vertex
@@ -576,7 +592,10 @@ export class DragController {
     if (p.shift) this.enterShift();
     const active = this.activeSlot(this.drag);
     const verts = active.plan.positions(0);
-    this.view.showPreview({ vertices: verts, faces: active.plan.previewFaces });
+    this.view.showPreview(
+      { vertices: verts, faces: active.plan.previewFaces },
+      { faceColors: active.plan.previewFaceColors(0), edgeColors: active.plan.previewEdgeColors },
+    );
     this.readout.setDrag({ kind: active.plan.kind, weld: this.drag.weld, count: this.drag.selCount, t: this.drag.t });
     // The drag marker is positioned on the first move (when we have a snap point).
   }
@@ -646,15 +665,33 @@ export class DragController {
         this.view.setPolyhedron(this.current, this.invalid);
       } else {
         const active = this.activeSlot(this.drag);
-        const mesh: Mesh = active.plan.commit(this.drag.t, this.drag.weld);
+        const { mesh, colors: normal } = active.plan.commit(this.drag.t, this.drag.weld);
+        // Special case: the icosahedron / dodecahedron get their own coloring,
+        // which (real recolor) becomes the shape's stored colors and propagates.
+        const special = detectSpecial(mesh);
+        const finalColors = special ? specialColorSet(mesh, special) : normal;
         const label = DragController.label(
           active.plan.kind,
           this.drag.weld,
           this.drag.selCount,
         );
+        // Colors at release: the welded form already matches its normal colors at
+        // t=1, so fade from those; a partial (un-welded) commit fades from the
+        // interpolated drag colors. Then fade to the final (possibly special) ones.
+        const fromRGB = this.drag.weld
+          ? faceColorsRGB(normal.face)
+          : active.plan.previewFaceColors(this.drag.t);
+        const toRGB = faceColorsRGB(finalColors.face);
         // The topology changed, so the old vertex/face ids no longer mean anything.
         this.selection.clear();
-        this.commitPoly(new Polyhedron(mesh), label);
+        const poly = new Polyhedron(mesh, finalColors);
+        // Render the committed geometry with the "from" colors, then start the fade.
+        this.view.showPreview(
+          { vertices: mesh.vertices, faces: mesh.faces },
+          { faceColors: fromRGB, edgeColors: finalColors.edge },
+        );
+        this.view.startColorFade(fromRGB, toRGB, config.render.colorFadeSeconds);
+        this.commitPoly(poly, label);
       }
     } else if (this.mode === "pending" && this.pending) {
       // a click (no drag): selection bookkeeping
@@ -687,7 +724,8 @@ export class DragController {
     if (config.solver.enabled) {
       this.startSolve(poly); // mutates poly's vertices in place across frames
     } else {
-      this.view.setPolyhedron(poly, false);
+      // Keep the release color-fade running over the (un-relaxed) committed shape.
+      this.view.setPolyhedron(poly, false, true);
       this.runIdentify(poly, true);
     }
   }
@@ -697,7 +735,8 @@ export class DragController {
     this.invalid = this.solver.invalid;
     this.solver = null;
     this.shapes.setSolving(false);
-    this.view.setPolyhedron(this.current, this.invalid);
+    // Keep any in-progress release color-fade running on the now-relaxed shape.
+    this.view.setPolyhedron(this.current, this.invalid, true);
     this.runIdentify(this.current, true);
   }
 
@@ -726,6 +765,7 @@ export class DragController {
       console.log(
         `[identify] ${this.invalid ? "INVALID — " : ""}${name ?? "Unknown"}\n${describeSignature(signature)}`,
       );
+      console.log(this.camera.position);
     }
     if (
       !this.invalid &&

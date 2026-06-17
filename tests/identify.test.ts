@@ -15,21 +15,21 @@ describe("identify", () => {
   });
 
   it("names operation results", () => {
-    const cuboct = new Polyhedron(buildTruncate(poly("cube"), 0, null).commit(1, true));
+    const cuboct = new Polyhedron(buildTruncate(poly("cube"), 0, null).commit(1, true).mesh);
     expect(identify(cuboct).name).toBe("Cuboctahedron");
 
-    const rhombicDodec = new Polyhedron(buildKis(poly("cube"), 0, null).commit(1, true));
+    const rhombicDodec = new Polyhedron(buildKis(poly("cube"), 0, null).commit(1, true).mesh);
     expect(identify(rhombicDodec).name).toBe("Rhombic dodecahedron");
 
     // rectified tetrahedron is combinatorially the octahedron
-    const rectTetra = new Polyhedron(buildTruncate(poly("tetrahedron"), 0, null).commit(1, true));
+    const rectTetra = new Polyhedron(buildTruncate(poly("tetrahedron"), 0, null).commit(1, true).mesh);
     expect(identify(rectTetra).name).toBe("Octahedron");
   });
 });
 
 describe("isomorphism verification", () => {
   it("verifies a matched name", () => {
-    const cuboct = new Polyhedron(buildTruncate(poly("cube"), 0, null).commit(1, true));
+    const cuboct = new Polyhedron(buildTruncate(poly("cube"), 0, null).commit(1, true).mesh);
     const target = namedGraphFor("Cuboctahedron")!;
     expect(areIsomorphic(buildGraphData(cuboct), target)).toBe(true);
   });

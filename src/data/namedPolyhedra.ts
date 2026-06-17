@@ -39,27 +39,27 @@ const seed = (name: string): Mesh => getSeed(name);
 
 /** Uniform truncation (intermediate topology) of a seed. */
 const truncate = (mesh: Mesh): Mesh =>
-  buildTruncate(new Polyhedron(mesh), 0, null).commit(0.5, false);
+  buildTruncate(new Polyhedron(mesh), 0, null).commit(0.5, false).mesh;
 
 /** Rectify / ambo of a seed (the welded "max" of the truncate drag). */
 const rectify = (mesh: Mesh): Mesh =>
-  buildTruncate(new Polyhedron(mesh), 0, null).commit(1, true);
+  buildTruncate(new Polyhedron(mesh), 0, null).commit(1, true).mesh;
 
 /** Snub of a seed */
 const snub = (mesh: Mesh): Mesh =>
-  buildSnub(new Polyhedron(mesh), 0, null).commit(1, true);
+  buildSnub(new Polyhedron(mesh), 0, null).commit(1, true).mesh;
 
 /** Kis (intermediate topology) of a seed. */
 const kis = (mesh: Mesh): Mesh =>
-  buildKis(new Polyhedron(mesh), 0, null).commit(0.5, false);
+  buildKis(new Polyhedron(mesh), 0, null).commit(0.5, false).mesh;
 
 /** Join of a seed (the welded "max" of the kis drag). */
 const join = (mesh: Mesh): Mesh =>
-  buildKis(new Polyhedron(mesh), 0, null).commit(1, true);
+  buildKis(new Polyhedron(mesh), 0, null).commit(1, true).mesh;
 
 /** Join of a seed (the welded "max" of the kis drag). */
 const gyro = (mesh: Mesh): Mesh =>
-  buildGyro(new Polyhedron(mesh), 0, null).commit(1, true);
+  buildGyro(new Polyhedron(mesh), 0, null).commit(1, true).mesh;
 
 const P: SolidType = "Platonic solid";
 const A: SolidType = "Archimedean solid";

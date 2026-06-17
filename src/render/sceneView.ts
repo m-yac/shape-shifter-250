@@ -19,7 +19,18 @@ import { type Camera } from "three";
 import { type Mesh } from "../geometry/HalfEdge";
 import { Polyhedron } from "../geometry/polyhedron";
 import { faceCentroidOf, newellNormal } from "../geometry/polyhedron";
+import { edgeKey, faceColorsRGB, darkRGB } from "../geometry/colors";
 import { config } from "../config";
+
+/** Options for a live preview render (drag / solve frames). */
+export interface PreviewOpts {
+  /** Per-face RGB to display (length = mesh.faces). Omit to keep current colors. */
+  faceColors?: Color[];
+  /** Palette indices per edge (keyed by edgeKey). Omit to keep current colors. */
+  edgeColors?: Map<string, number>;
+  /** Undirected edge keys to omit from the wireframe (vanishing-at-weld edges). */
+  hiddenEdges?: Set<string>;
+}
 
 export type MarkerKind = "vertex" | "face";
 export type MarkerState = "normal" | "proximity" | "hover" | "selected" | "drag";
@@ -33,7 +44,7 @@ export interface Marker {
 }
 
 /** Unique undirected edges (as index pairs) of a mesh, for the wireframe. */
-function meshEdges(mesh: Mesh): Array<[number, number]> {
+function meshEdges(mesh: Mesh, hidden?: Set<string>): Array<[number, number]> {
   const seen = new Set<string>();
   const out: Array<[number, number]> = [];
   for (const f of mesh.faces) {
@@ -41,24 +52,35 @@ function meshEdges(mesh: Mesh): Array<[number, number]> {
       const a = f[i];
       const b = f[(i + 1) % f.length];
       const key = a < b ? `${a}_${b}` : `${b}_${a}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        out.push([a, b]);
-      }
+      if (seen.has(key) || hidden?.has(key)) continue;
+      seen.add(key);
+      out.push([a, b]);
     }
   }
   return out;
+}
+
+/** Number of triangle-vertices (fan-triangulated) a face of `n` sides emits. */
+function faceVertexCount(n: number): number {
+  return 3 * (n - 2);
 }
 
 /**
  * Fan-triangulated face geometry (non-indexed). Every triangle of a face is
  * given that face's single Newell normal, so a face shades uniformly with no
  * crease along the triangulation diagonal even if it is very slightly non-planar.
+ * Each triangle vertex also receives its face's RGB color (per-face coloring).
  */
-function faceGeometryArrays(mesh: Mesh): { positions: number[]; normals: number[] } {
+function faceGeometryArrays(
+  mesh: Mesh,
+  faceColors: Color[],
+): { positions: number[]; normals: number[]; colors: number[] } {
   const positions: number[] = [];
   const normals: number[] = [];
-  for (const f of mesh.faces) {
+  const colors: number[] = [];
+  for (let fi = 0; fi < mesh.faces.length; fi++) {
+    const f = mesh.faces[fi];
+    const col = faceColors[fi] ?? new Color(config.render.fallbackColor);
     const n = newellNormal(f.map((i) => mesh.vertices[i]));
     // Orient outward (same centroid convention as the markers / highlights): the
     // solid is centered at the origin, so a face's outward direction is its
@@ -73,20 +95,31 @@ function faceGeometryArrays(mesh: Mesh): { positions: number[]; normals: number[
       const a = mesh.vertices[loop[i]];
       const b = mesh.vertices[loop[i + 1]];
       positions.push(p0.x, p0.y, p0.z, a.x, a.y, a.z, b.x, b.y, b.z);
-      for (let k = 0; k < 3; k++) normals.push(n.x, n.y, n.z);
+      for (let k = 0; k < 3; k++) {
+        normals.push(n.x, n.y, n.z);
+        colors.push(col.r, col.g, col.b);
+      }
     }
   }
-  return { positions, normals };
+  return { positions, normals, colors };
 }
 
-function edgePositions(mesh: Mesh): number[] {
-  const pos: number[] = [];
-  for (const [a, b] of meshEdges(mesh)) {
+/** Wireframe positions + per-edge dark color (from `edgeColors` palette indices). */
+function edgeGeometryArrays(
+  mesh: Mesh,
+  edgeColors: Map<string, number>,
+  hidden?: Set<string>,
+): { positions: number[]; colors: number[] } {
+  const positions: number[] = [];
+  const colors: number[] = [];
+  for (const [a, b] of meshEdges(mesh, hidden)) {
     const pa = mesh.vertices[a];
     const pb = mesh.vertices[b];
-    pos.push(pa.x, pa.y, pa.z, pb.x, pb.y, pb.z);
+    positions.push(pa.x, pa.y, pa.z, pb.x, pb.y, pb.z);
+    const c = darkRGB(edgeColors.get(edgeKey(a, b)) ?? -1);
+    colors.push(c.r, c.g, c.b, c.r, c.g, c.b);
   }
-  return pos;
+  return { positions, colors };
 }
 
 /** Color + opacity for a marker in a given state. */
@@ -139,12 +172,25 @@ export class SceneView {
   private glowStart = 0;
   private glowDur = 0;
   private glowPeak = 0;
+
+  // Per-face display colors (one RGB per current face) and the triangle-vertex
+  // count of each face, so the color buffer can be rewritten in place during a
+  // fade without rebuilding positions.
+  private displayFaceColors: Color[] = [];
+  private faceVertCounts: number[] = [];
+  // Palette index per displayed edge (keyed by edgeKey); drawn via the dark palette.
+  private displayEdgeColors: Map<string, number> = new Map();
+  // Active face-color fade (release → final colors). null when idle.
+  private colorFade: { from: Color[]; to: Color[]; start: number; durMs: number } | null = null;
   private vertexGeo = new SphereGeometry(config.render.vertexMarkerRadius, 14, 10);
   private faceGeo = new SphereGeometry(config.render.faceMarkerRadius, 14, 10);
 
   constructor(public readonly scene: Scene) {
     this.faceMat = new MeshStandardMaterial({
+      // Per-face colors come from the geometry's vertex-color attribute; `color`
+      // stays white so it acts as a neutral multiplier.
       color: config.render.faceColor,
+      vertexColors: true,
       transparent: config.render.faceOpacity < 1,
       opacity: config.render.faceOpacity,
       // Normals are supplied per face (one Newell normal per face), so we don't
@@ -162,7 +208,8 @@ export class SceneView {
     this.faceMesh = new ThreeMesh(new BufferGeometry(), this.faceMat);
     this.edges = new LineSegments(
       new BufferGeometry(),
-      new LineBasicMaterial({ color: config.render.edgeColor }),
+      // Per-edge colors (dark palette) come from the geometry color attribute.
+      new LineBasicMaterial({ color: 0xffffff, vertexColors: true }),
     );
     this.edges.visible = config.render.showEdges;
 
@@ -223,12 +270,16 @@ export class SceneView {
     return this.faceMesh;
   }
 
-  /** Rebuild everything from a committed polyhedron. */
-  setPolyhedron(poly: Polyhedron, invalid: boolean): void {
-    this.updateSurface(poly.mesh);
-    this.faceMat.color.setHex(
-      invalid ? config.render.invalidFaceColor : config.render.faceColor,
-    );
+  /**
+   * Rebuild everything from a committed polyhedron. By default this snaps the
+   * face colors to the polyhedron's committed colors; pass `keepFade` (used when
+   * finishing a relax that is still color-fading) to leave an active fade running.
+   */
+  setPolyhedron(poly: Polyhedron, _invalid: boolean, keepFade = false): void {
+    if (!keepFade) this.colorFade = null;
+    const colors =
+      this.colorFade ? this.displayFaceColors : faceColorsRGB(poly.colors.face);
+    this.updateSurface(poly.mesh, colors, poly.colors.edge);
     this.rebuildMarkers(poly);
     this.markerGroup.visible = true;
     this.clearEdgeHighlight();
@@ -236,9 +287,12 @@ export class SceneView {
     this.hideDragMarker();
   }
 
-  /** Recolor the surface (e.g. the "adjusting" tint while relaxing). */
-  setSurfaceColor(hex: number): void {
-    this.faceMat.color.setHex(hex);
+  /** Start a face-color fade from `from` to `to` over `seconds`. The geometry is
+   *  expected to already show `from` (caller renders the committed mesh first). */
+  startColorFade(from: Color[], to: Color[], seconds: number): void {
+    this.displayFaceColors = from.map((c) => c.clone());
+    this.colorFade = { from, to, start: performance.now(), durMs: Math.max(1, seconds * 1000) };
+    this.writeFaceColors();
   }
 
   /** Start an emissive glow pulse that peaks at `strength` and fades over
@@ -250,8 +304,9 @@ export class SceneView {
     this.glowDur = Math.max(1, seconds * 1000);
   }
 
-  /** Advance time-based visual effects (the glow pulse). Call once per frame. */
+  /** Advance time-based visual effects (color fade + glow pulse). Call per frame. */
   updateEffects(nowMs: number): void {
+    this.advanceColorFade(nowMs);
     if (this.glowDur <= 0) return;
     const t = (nowMs - this.glowStart) / this.glowDur;
     if (t >= 1) {
@@ -262,6 +317,21 @@ export class SceneView {
     // Quick attack, gentle decay.
     const env = t < 0.15 ? t / 0.15 : 1 - (t - 0.15) / 0.85;
     this.faceMat.emissiveIntensity = this.glowPeak * Math.max(0, env);
+  }
+
+  /** Step an in-progress face-color fade and rewrite the color buffer in place. */
+  private advanceColorFade(nowMs: number): void {
+    const f = this.colorFade;
+    if (!f) return;
+    const k = Math.min(1, (nowMs - f.start) / f.durMs);
+    const ease = k * k * (3 - 2 * k); // smoothstep
+    for (let i = 0; i < this.displayFaceColors.length; i++) {
+      const from = f.from[i] ?? new Color(config.render.fallbackColor);
+      const to = f.to[i] ?? new Color(config.render.fallbackColor);
+      this.displayFaceColors[i] = from.clone().lerp(to, ease);
+    }
+    this.writeFaceColors();
+    if (k >= 1) this.colorFade = null;
   }
 
   /** Show the small sphere on the vertex currently targeted by the drag. */
@@ -275,22 +345,50 @@ export class SceneView {
     this.dragMarker.visible = false;
   }
 
-  /** Update only the face + wireframe surface (used live and on commit). */
-  private updateSurface(mesh: Mesh): void {
-    const { positions, normals } = faceGeometryArrays(mesh);
+  /** Update the face + wireframe surface (used live and on commit). Records the
+   *  per-face colors + triangle counts so a fade can rewrite colors in place. */
+  private updateSurface(
+    mesh: Mesh,
+    faceColors: Color[],
+    edgeColors: Map<string, number>,
+    hiddenEdges?: Set<string>,
+  ): void {
+    this.displayFaceColors = faceColors;
+    this.displayEdgeColors = edgeColors;
+    this.faceVertCounts = mesh.faces.map((f) => faceVertexCount(f.length));
+    const { positions, normals, colors } = faceGeometryArrays(mesh, faceColors);
     const fg = new BufferGeometry();
     fg.setAttribute("position", new Float32BufferAttribute(positions, 3));
     fg.setAttribute("normal", new Float32BufferAttribute(normals, 3));
+    fg.setAttribute("color", new Float32BufferAttribute(colors, 3));
     this.faceMesh.geometry.dispose();
     this.faceMesh.geometry = fg;
 
+    const edge = edgeGeometryArrays(mesh, edgeColors, hiddenEdges);
     const eg = new BufferGeometry();
-    eg.setAttribute(
-      "position",
-      new Float32BufferAttribute(edgePositions(mesh), 3),
-    );
+    eg.setAttribute("position", new Float32BufferAttribute(edge.positions, 3));
+    eg.setAttribute("color", new Float32BufferAttribute(edge.colors, 3));
     this.edges.geometry.dispose();
     this.edges.geometry = eg;
+  }
+
+  /** Rewrite just the color attribute in place from `displayFaceColors`. */
+  private writeFaceColors(): void {
+    const attr = this.faceMesh.geometry.getAttribute("color") as
+      | Float32BufferAttribute
+      | undefined;
+    if (!attr) return;
+    const arr = attr.array as Float32Array;
+    let o = 0;
+    for (let fi = 0; fi < this.faceVertCounts.length; fi++) {
+      const c = this.displayFaceColors[fi] ?? new Color(config.render.fallbackColor);
+      for (let k = 0; k < this.faceVertCounts[fi]; k++) {
+        arr[o++] = c.r;
+        arr[o++] = c.g;
+        arr[o++] = c.b;
+      }
+    }
+    attr.needsUpdate = true;
   }
 
   private rebuildMarkers(poly: Polyhedron): void {
@@ -348,11 +446,18 @@ export class SceneView {
     }
   }
 
-  /** Show a transient morph preview (hide markers + face overlay). */
-  showPreview(mesh: Mesh): void {
+  /** Show a transient morph preview (hide markers + face overlay). `faceColors`
+   *  overrides the per-face colors (drag); omit to keep the current colors (solve
+   *  frames, where a fade may be running). `hiddenEdges` drops vanishing edges. */
+  showPreview(mesh: Mesh, opts?: PreviewOpts): void {
     this.markerGroup.visible = false;
     this.clearFaceHighlight();
-    this.updateSurface(mesh);
+    this.updateSurface(
+      mesh,
+      opts?.faceColors ?? this.displayFaceColors,
+      opts?.edgeColors ?? this.displayEdgeColors,
+      opts?.hiddenEdges,
+    );
   }
 
   /** Rescale markers + the drag tube so their apparent on-screen size is stable. */
