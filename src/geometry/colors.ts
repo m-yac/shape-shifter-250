@@ -43,6 +43,27 @@ export function faceColorsRGB(face: number[]): Color[] {
   return face.map((i) => paletteRGB(i));
 }
 
+// --- "light" palette variants (only used by the _light.png export) ----------
+
+/** Resolve a palette index to a FACE RGB Color in the LIGHT palette. */
+export function paletteRGBLight(index: number): Color {
+  const pal = config.render.light.palette;
+  const hex = index >= 0 && index < pal.length ? pal[index] : config.render.light.fallbackColor;
+  return new Color(hex);
+}
+
+/** Resolve a palette index to an EDGE RGB Color in the LIGHT (dark) palette. */
+export function darkRGBLight(index: number): Color {
+  const pal = config.render.light.darkPalette;
+  const hex = index >= 0 && index < pal.length ? pal[index] : config.render.light.darkFallbackColor;
+  return new Color(hex);
+}
+
+/** Map a whole face-color array to RGB using the LIGHT palette. */
+export function faceColorsRGBLight(face: number[]): Color[] {
+  return face.map((i) => paletteRGBLight(i));
+}
+
 /** Every undirected edge of a mesh, as keys, once each. */
 export function meshEdgeKeys(mesh: Mesh): string[] {
   const seen = new Set<string>();

@@ -19,7 +19,13 @@ import { type Camera } from "three";
 import { type Mesh } from "../geometry/HalfEdge";
 import { Polyhedron } from "../geometry/polyhedron";
 import { faceCentroidOf, newellNormal } from "../geometry/polyhedron";
-import { edgeKey, faceColorsRGB, darkRGB } from "../geometry/colors";
+import {
+  edgeKey,
+  faceColorsRGB,
+  darkRGB,
+  faceColorsRGBLight,
+  darkRGBLight,
+} from "../geometry/colors";
 import { config } from "../config";
 
 /** Options for a live preview render (drag / solve frames). */
@@ -104,11 +110,14 @@ function faceGeometryArrays(
   return { positions, normals, colors };
 }
 
-/** Wireframe positions + per-edge dark color (from `edgeColors` palette indices). */
+/** Wireframe positions + per-edge color (from `edgeColors` palette indices). The
+ *  resolver maps an index to RGB; defaults to the dark palette (the screen look),
+ *  but the _light.png export passes `darkRGBLight`. */
 function edgeGeometryArrays(
   mesh: Mesh,
   edgeColors: Map<string, number>,
   hidden?: Set<string>,
+  resolve: (index: number) => Color = darkRGB,
 ): { positions: number[]; colors: number[] } {
   const positions: number[] = [];
   const colors: number[] = [];
@@ -116,7 +125,7 @@ function edgeGeometryArrays(
     const pa = mesh.vertices[a];
     const pb = mesh.vertices[b];
     positions.push(pa.x, pa.y, pa.z, pb.x, pb.y, pb.z);
-    const c = darkRGB(edgeColors.get(edgeKey(a, b)) ?? -1);
+    const c = resolve(edgeColors.get(edgeKey(a, b)) ?? -1);
     colors.push(c.r, c.g, c.b, c.r, c.g, c.b);
   }
   return { positions, colors };
@@ -285,6 +294,51 @@ export class SceneView {
     this.clearEdgeHighlight();
     this.clearFaceHighlight();
     this.hideDragMarker();
+  }
+
+  /**
+   * Temporarily swap the surface to the "light" export look (light face palette,
+   * dark legible edges, opaque faces, no emissive glow, markers hidden) and return
+   * a closure that restores the on-screen look exactly. Used by the _light.png save.
+   * Builds throwaway geometry and keeps the live geometry aside, so it never
+   * disturbs the display state (colors, fades, vertex counts).
+   */
+  applyExportLight(poly: Polyhedron): () => void {
+    const oldFaceGeo = this.faceMesh.geometry;
+    const oldEdgeGeo = this.edges.geometry;
+    const oldOpacity = this.faceMat.opacity;
+    const oldTransparent = this.faceMat.transparent;
+    const oldEmissive = this.faceMat.emissiveIntensity;
+    const oldMarkers = this.markerGroup.visible;
+
+    const fa = faceGeometryArrays(poly.mesh, faceColorsRGBLight(poly.colors.face));
+    const fg = new BufferGeometry();
+    fg.setAttribute("position", new Float32BufferAttribute(fa.positions, 3));
+    fg.setAttribute("normal", new Float32BufferAttribute(fa.normals, 3));
+    fg.setAttribute("color", new Float32BufferAttribute(fa.colors, 3));
+    this.faceMesh.geometry = fg;
+
+    const ea = edgeGeometryArrays(poly.mesh, poly.colors.edge, undefined, darkRGBLight);
+    const eg = new BufferGeometry();
+    eg.setAttribute("position", new Float32BufferAttribute(ea.positions, 3));
+    eg.setAttribute("color", new Float32BufferAttribute(ea.colors, 3));
+    this.edges.geometry = eg;
+
+    this.faceMat.opacity = config.render.light.faceOpacity;
+    this.faceMat.transparent = config.render.light.faceOpacity < 1;
+    this.faceMat.emissiveIntensity = 0;
+    this.markerGroup.visible = false;
+
+    return () => {
+      this.faceMesh.geometry.dispose();
+      this.faceMesh.geometry = oldFaceGeo;
+      this.edges.geometry.dispose();
+      this.edges.geometry = oldEdgeGeo;
+      this.faceMat.opacity = oldOpacity;
+      this.faceMat.transparent = oldTransparent;
+      this.faceMat.emissiveIntensity = oldEmissive;
+      this.markerGroup.visible = oldMarkers;
+    };
   }
 
   /** Start a face-color fade from `from` to `to` over `seconds`. The geometry is

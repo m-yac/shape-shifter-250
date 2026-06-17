@@ -12,6 +12,7 @@
  * =============================================================================
  */
 import { fadeIn } from "./screen";
+import { led } from "./led";
 
 export class Console {
   private lines: string[] = [""];
@@ -41,6 +42,7 @@ export class Console {
 
   /** Append text to the current (last) line; embedded "\n"s start new rows. */
   print(text: string): this {
+    led.pulse(); // flick the activity LED as characters appear
     const parts = text.split("\n");
     this.lines[this.lines.length - 1] += parts[0];
     for (let i = 1; i < parts.length; i++) this.lines.push(parts[i]);
@@ -55,6 +57,7 @@ export class Console {
   /** Replace the text of the current (last) line — handy for in-place updates
    *  like a counter or a progress bar. */
   setLine(text: string): this {
+    led.pulse(); // in-place updates (counters, progress) flick the LED too
     this.lines[this.lines.length - 1] = text;
     return this.render();
   }

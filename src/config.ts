@@ -646,6 +646,32 @@ export const config = {
     // Hover highlight of a whole face (translucent overlay over the hovered face).
     faceHighlightColor: 0xffffff,
     faceHighlightOpacity: 0.22,
+
+    // "LIGHT" EXPORT LOOK — used ONLY by the <name>_light.png save: a clean,
+    // printable render (square, high-res, no bloom, white background). The on-
+    // screen palette is tuned for a dark backlight, so it gets light variants
+    // here: index 0 (white) becomes a light grey so it reads on white paper, and
+    // the faces are drawn opaque. Edges reuse a dark palette (already legible on
+    // white). Indices line up 1:1 with `palette` / `darkPalette` above.
+    light: {
+      resolution: 2048, // square px of the exported image
+      backgroundColor: 0xffffff, // white paper background
+      faceOpacity: 1, // opaque (the on-screen faces are translucent)
+      palette: [
+        0xe6e6e6, // 0 white -> light grey (so it reads on white)
+        0xf2c230, // 1 yellow (a touch deeper to read on white)
+        0xe0524a, // 2 red
+        0x4a78e0, // 3 blue
+      ],
+      darkPalette: [
+        0x555555, // 0 grey
+        0x66541e, // 1 dark yellow
+        0x5a211e, // 2 dark red
+        0x1e305a, // 3 dark blue
+      ],
+      fallbackColor: 0xe6e6e6, // faces: missing / out-of-range index
+      darkFallbackColor: 0x555555, // edges: missing / out-of-range index
+    },
   },
 } as const;
 

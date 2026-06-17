@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
 @font-face {
   font-family: AST_PremiumExec;
   src: url(oldschool_pc_font_pack_v2.2_web/WebPlus_AST_PremiumExec.woff);
@@ -428,4 +429,98 @@ canvas {
     transparent 55%,
     rgba(0, 0, 0, var(--vignette-opacity, 0.55)) 100%
   );
+}
+
+/* --------------------------------------------------------------------
+   BEZEL CONTROLS — labels + plastic buttons molded into the bottom bezel
+   (the extra plastic strip below the glass). See ui/bezelControls.ts. */
+.bezel-controls {
+  position: absolute;
+  left: var(--bezel-frame, 40px);
+  right: var(--bezel-frame, 40px);
+  bottom: 0;
+  height: var(--bezel-bottom, 90px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px;
+  box-sizing: border-box;
+  z-index: 5;
+  font-family: "Helvetica Neue", Arial, sans-serif;
+  /* sit on the plastic, slightly inset from the screen so they read as molded-in */
+  user-select: none;
+  -webkit-user-select: none;
+}
+.bezel-group {
+  font-family: "Share Tech Mono";
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+/* Silkscreen-style label printed on the plastic (e.g. "Save"). */
+.bezel-label {
+  font-size: 14pt;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.32);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.6);
+}
+/* A molded plastic push-button: raised, beveled, with an engraved caption. */
+.bezel-btn {
+  appearance: none;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14pt;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.7);
+  padding: 5px 12px;
+  border-radius: 5px;
+  background: linear-gradient(
+    160deg,
+    var(--bezel-light, #3b3e37) 0%,
+    var(--bezel-dark, #1c1e19) 90%
+  );
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.12) inset,
+    0 -2px 3px rgba(0, 0, 0, 0.5) inset,
+    0 2px 3px rgba(0, 0, 0, 0.55),
+    0 1px 0 rgba(0, 0, 0, 0.7);
+}
+.bezel-btn:hover {
+  color: rgba(255, 255, 255, 0.85);
+}
+/* Pressed: sink the button and flip the bevel so it reads as pushed-in. */
+.bezel-btn:active {
+  color: rgba(255, 255, 255, 0.5);
+  background: linear-gradient(
+    160deg,
+    var(--bezel-dark, #1c1e19) 0%,
+    var(--bezel-light, #3b3e37) 100%
+  );
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.6) inset,
+    0 1px 0 rgba(255, 255, 255, 0.06);
+  transform: translateY(1px);
+}
+/* The activity LED: a small lamp, dark when idle/off, glowing red when lit. */
+.led {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #5a1010, #200505 75%);
+  box-shadow:
+    0 1px 1px rgba(0, 0, 0, 0.8),
+    0 0 2px rgba(0, 0, 0, 0.6) inset;
+  transition: none; /* it flickers per-frame; no easing */
+}
+.led.on {
+  background: radial-gradient(circle at 35% 30%, #ff8a7a, #ff2a1a 55%, #b00f08 100%);
+  box-shadow:
+    0 0 6px 1px rgba(255, 50, 35, 0.85),
+    0 0 2px rgba(255, 120, 100, 0.9) inset;
 }

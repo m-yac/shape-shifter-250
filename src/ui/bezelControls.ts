@@ -1,0 +1,64 @@
+import { led } from "./led";
+
+/**
+ * =============================================================================
+ *  BEZEL CONTROLS — the labels + plastic buttons on the bottom bezel.
+ * =============================================================================
+ *
+ *  The monitor's bottom plastic strip (the extra `padding-bottom` on #bezel)
+ *  carries a small control panel, styled like the silkscreen labels and molded
+ *  buttons on an old computer monitor:
+ *
+ *    left:   [red activity LED]  [ Help & Info ]
+ *    right:  Save  [ PNG ]  [ STL ]
+ *
+ *  The LED is owned by the `led` singleton (this just builds + registers its
+ *  element). The buttons fire the callbacks passed in. "Help & Info" is wired but
+ *  intentionally does nothing yet.
+ * =============================================================================
+ */
+
+export interface BezelControlHandlers {
+  onHelp: () => void;
+  onSavePng: () => void;
+  onSaveStl: () => void;
+}
+
+export class BezelControls {
+  constructor(bezel: HTMLElement, handlers: BezelControlHandlers) {
+    const bar = document.createElement("div");
+    bar.className = "bezel-controls";
+
+    // Left group: the activity LED + the Help & Info button.
+    const left = document.createElement("div");
+    left.className = "bezel-group";
+    const ledEl = document.createElement("div");
+    ledEl.className = "led";
+    led.setElement(ledEl);
+    left.append(ledEl, this.button("Help & Info", handlers.onHelp));
+
+    // Right group: the "Save" label + the PNG / STL buttons.
+    const right = document.createElement("div");
+    right.className = "bezel-group";
+    const label = document.createElement("span");
+    label.className = "bezel-label";
+    label.textContent = "Save:";
+    right.append(
+      label,
+      this.button("PNG", handlers.onSavePng),
+      this.button("STL", handlers.onSaveStl),
+    );
+
+    bar.append(left, right);
+    bezel.appendChild(bar);
+  }
+
+  private button(text: string, onClick: () => void): HTMLElement {
+    const btn = document.createElement("button");
+    btn.className = "bezel-btn";
+    btn.type = "button";
+    btn.textContent = text;
+    btn.addEventListener("click", onClick);
+    return btn;
+  }
+}

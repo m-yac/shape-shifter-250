@@ -29,6 +29,7 @@ import { DiscoveryPopup } from "../ui/discoveryPopup";
 import { Discoveries } from "../discoveries";
 import { solidTypeFor } from "../data/namedPolyhedra";
 import { config } from "../config";
+import { led } from "../ui/led";
 
 const DRAG_START_PIXELS = 4;
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -159,6 +160,16 @@ export class DragController {
     this.history.reset(initial, seedLabel);
     this.view.setPolyhedron(this.current, false);
     this.runIdentify(this.current);
+  }
+
+  /** The current polyhedron (live solved vertices), for saving its geometry. */
+  currentPoly(): Polyhedron {
+    return this.current;
+  }
+
+  /** The identified name of the current shape (null if unidentified), for filenames. */
+  currentName(): string | null {
+    return this.lastName;
   }
 
   /** Force the HISTORY panel visible now (used when the intro is skipped, so all
@@ -326,6 +337,10 @@ export class DragController {
     this.view.updateMarkerScales(this.camera, config.camera.startDistance);
     this.view.updateEffects(performance.now()); // advance the discovery glow pulse
     if (!this.solver) return;
+
+    // The geometry is being updated this frame (a relaxation / canonicalization
+    // step is running), so flick the activity LED.
+    led.pulse();
 
     // While a button is physically held, keep the solver in sustain mode so it
     // doesn't damp itself to a premature stop.

@@ -26,6 +26,10 @@ import { ShapesPanel } from "./ui/shapesPanel";
 import { GlitchOverlay } from "./ui/glitch";
 import { IntroCutscene } from "./interaction/introCutscene";
 import { LetterIntro } from "./interaction/letterIntro";
+import { BezelControls } from "./ui/bezelControls";
+import { led } from "./ui/led";
+import { fileBase, saveWysiwygPng, saveLightPng, download } from "./render/exportImage";
+import { polyhedronToStl } from "./render/exportMesh";
 
 const app = document.getElementById("app")!;
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -50,7 +54,9 @@ const glitch = new GlitchOverlay(screen, document.getElementById("grid")!);
 // (pixel ratio 1/pixelSize) and the canvas is nearest-neighbor upscaled, so the
 // 3D shares the text's chunky pixel grid. Otherwise it renders crisp at full
 // device resolution.
-const renderer = new WebGLRenderer({ antialias: true });
+// preserveDrawingBuffer lets the PNG save read the canvas reliably regardless of
+// when the click lands relative to the render loop.
+const renderer = new WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(
   config.theme.pixelateRender
     ? 1 / config.theme.pixelSize
@@ -123,6 +129,34 @@ rig.frame(new Vector3());
 
 let controller: DragController | null = null;
 let intro: IntroCutscene | null = null;
+
+// --- bottom-bezel controls (LED + Help/Info + PNG/STL save) -----------------
+// Save buttons act on the current shape; they no-op until the controller exists
+// (i.e. once the intro hands off). The filename is the shape name, lower-cased
+// with spaces → underscores.
+new BezelControls(screen.bezel, {
+  onHelp: () => {}, // wired but intentionally inert for now
+  onSavePng: () => {
+    if (!controller) return;
+    const base = fileBase(controller.currentName());
+    saveWysiwygPng(renderer, base);
+    saveLightPng(renderer, scene, rig.camera, view, controller.currentPoly(), base);
+  },
+  onSaveStl: () => {
+    if (!controller) return;
+    const base = fileBase(controller.currentName());
+    download(polyhedronToStl(controller.currentPoly()), `${base}.stl`);
+  },
+});
+
+// Flick the activity LED while the user drags (orbiting the shape or a handle):
+// any pointer move with a button down counts as "working".
+let pointerDown = false;
+window.addEventListener("pointerdown", () => (pointerDown = true));
+window.addEventListener("pointerup", () => (pointerDown = false));
+window.addEventListener("pointermove", () => {
+  if (pointerDown) led.pulse();
+});
 
 // The program (the faux-BIOS boot + the shape fading in) does NOT start on load:
 // the letter rises first and the program only boots once the reader puts the
@@ -244,5 +278,6 @@ function animate(): void {
   glitch.tick(performance.now());
   rig.update();
   composer.render();
+  led.tick(); // apply the activity LED's blink for this frame (after any pulses)
 }
 animate();

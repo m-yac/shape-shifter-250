@@ -264,6 +264,10 @@ export class Screen {
     this.bezel.style.padding = `${config.screen.bezel}px`;
     const botPad = config.screen.bezel + config.screen.extraBezelBottom;
     this.bezel.style.paddingBottom = `${botPad}px`;
+    // Expose the frame thickness + bottom strip so the bottom-bezel controls
+    // (ui/bezelControls.ts) can position themselves in the plastic below the glass.
+    root.setProperty("--bezel-frame", `${config.screen.bezel}px`);
+    root.setProperty("--bezel-bottom", `${botPad}px`);
   }
 }
 

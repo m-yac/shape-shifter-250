@@ -6,6 +6,7 @@ import { config } from "../config";
 import { BootSequence } from "./bootSequence";
 import { Screen, fadeOut } from "../ui/screen";
 import { GlitchOverlay } from "../ui/glitch";
+import { led } from "../ui/led";
 
 /** Parse a "#rrggbb" hex color into an [r, g, b] triple of 0..255 ints. */
 function hexRgb(hex: string): [number, number, number] {
@@ -61,6 +62,9 @@ export class IntroCutscene {
     this.camera.position.set(0, 0, this.distance);
     this.view.scene.fog = this.fog;
     this.view.setPolyhedron(this.poly, false);
+
+    // The monitor is powering on now — light the activity LED with the screen flash.
+    led.powerOn();
   }
 
   private finished = false;
