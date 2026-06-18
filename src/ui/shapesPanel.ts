@@ -9,6 +9,7 @@ import { Screen, Popup, fadeIn } from "./screen";
 // the layout code.
 const LIBRARY_KEY = "libraryLine";
 const REGULAR_KEY = "regularLine";
+const COLORS_KEY = "colorsLine";
 
 /**
  * Top-left OPTIONS panel: a small box-drawing popup pinned to the top-left
@@ -30,11 +31,13 @@ export class ShapesPanel {
   private visible = false;
   private count = 0;
   private strategy: Strategy = config.solver.defaultStrategy;
+  private colorScheme: string = config.render.defaultColorScheme;
   private solving = false;
   // The button currently held down (line + button key), or null.
   private pressed: { lineKey: string; btnKey: string } | null = null;
   private onPress: (s: Strategy) => void = () => {};
   private onRelease: () => void = () => {};
+  private onColorScheme: (name: string) => void = () => {};
   /** Height of the panel in rows (one per config line + the two border rows),
    *  so neighbours can avoid overlapping it. */
   readonly rows = 2 + Object.keys(config.ui.optionsPanel).length;
@@ -86,6 +89,7 @@ export class ShapesPanel {
     this.popup.el.style.display = "none"; // hidden until the first operation
     this.render();
     this.refreshButtons();
+    this.refreshColorButtons();
     screen.onLayout(() => this.popup.placeAt(0, 0));
 
     // A release anywhere ends the hold (the pointer may have left the button).
@@ -111,10 +115,17 @@ export class ShapesPanel {
   }
 
   // Press/release wiring. The press/hold mechanics are generic; what a press
-  // *means* is keyed: only the regular line drives the solver strategy.
+  // *means* is keyed: the regular line drives the solver strategy (press-and-hold),
+  // the colors line picks a color scheme (an instant toggle, no hold).
   private pressButton(lineKey: string, btnKey: string): void {
     this.pressed = { lineKey, btnKey };
-    if (lineKey === REGULAR_KEY) this.onPress(btnKey as Strategy);
+    if (lineKey === REGULAR_KEY) {
+      this.onPress(btnKey as Strategy);
+    } else if (lineKey === COLORS_KEY) {
+      this.colorScheme = btnKey;
+      this.refreshColorButtons();
+      this.onColorScheme(btnKey);
+    }
   }
 
   private releaseButton(): void {
@@ -130,6 +141,18 @@ export class ShapesPanel {
   bindStrategy(onPress: (s: Strategy) => void, onRelease: () => void): void {
     this.onPress = onPress;
     this.onRelease = onRelease;
+  }
+
+  /** Wire the color-scheme selection handler (fired on each Colors-line press). */
+  bindColorScheme(onSelect: (name: string) => void): void {
+    this.onColorScheme = onSelect;
+  }
+
+  /** Mark which color scheme button is the active one. */
+  setActiveColorScheme(name: string): void {
+    if (name === this.colorScheme) return;
+    this.colorScheme = name;
+    this.refreshColorButtons();
   }
 
   /** Update the discovered-shape count shown on the "Library:" line. */
@@ -161,6 +184,14 @@ export class ShapesPanel {
       const active = key === this.strategy;
       el.classList.toggle("active", active);
       el.classList.toggle("running", active && this.solving);
+    }
+  }
+
+  private refreshColorButtons(): void {
+    const map = this.buttonEls[COLORS_KEY];
+    if (!map) return;
+    for (const key of Object.keys(map)) {
+      map[key].classList.toggle("active", key === this.colorScheme);
     }
   }
 

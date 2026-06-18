@@ -3,10 +3,11 @@ import { type Mesh } from "./HalfEdge";
 import { config } from "../config";
 
 /**
- * Per-element palette colors that travel with a committed polyhedron. Each value
- * is an INDEX into `config.render.palette` (resolved to RGB by `paletteRGB`);
- * indices may exceed the palette length (the "max+1" rule is unbounded), in which
- * case they fall back to `config.render.fallbackColor`.
+ * Per-element GEOMETRIC colors that travel with a committed polyhedron. Each value
+ * is an unbounded non-negative integer assigned by the Conway operations (the
+ * "c+1 / c+2 / c+3" rules). A geometric color is mapped to an actual palette entry
+ * through the currently-selected color SCHEME (`config.render.colorSchemes`); a
+ * geometric color past the scheme's length falls back to palette entry 0.
  *
  * Edges are keyed by their undirected vertex-index pair (`edgeKey`). Vertex and
  * face colors are indexed by mesh vertex / face index. Only face colors are drawn
@@ -19,23 +20,43 @@ export interface ColorSet {
   edge: Map<string, number>;
 }
 
+export type SchemeName = keyof typeof config.render.colorSchemes;
+
+// The currently-selected color scheme. Switched by the OPTIONS "Colors" buttons
+// (see ui/shapesPanel.ts → DragController.selectColorScheme); read by every
+// geometric-color → RGB resolution below so a switch recolors the whole solid.
+let currentScheme: SchemeName = config.render.defaultColorScheme as SchemeName;
+
+/** The active color scheme name. */
+export function getColorScheme(): SchemeName {
+  return currentScheme;
+}
+
+/** Switch the active color scheme (does not itself re-render — caller recolors). */
+export function setColorScheme(name: SchemeName): void {
+  currentScheme = name;
+}
+
+/** Map a geometric color to a palette entry index via the active scheme
+ *  (out-of-range geometric colors → palette entry 0, the fallback). */
+function paletteIndex(geom: number): number {
+  const scheme = config.render.colorSchemes[currentScheme] as readonly number[];
+  return geom >= 0 && geom < scheme.length ? scheme[geom] : 0;
+}
+
 /** Undirected edge key from two vertex indices. */
 export function edgeKey(a: number, b: number): string {
   return a < b ? `${a}_${b}` : `${b}_${a}`;
 }
 
-/** Resolve a palette index to a FACE RGB Color (out-of-range → fallback). */
-export function paletteRGB(index: number): Color {
-  const pal = config.render.palette;
-  const hex = index >= 0 && index < pal.length ? pal[index] : config.render.fallbackColor;
-  return new Color(hex);
+/** Resolve a geometric color to a FACE RGB Color (via the active scheme). */
+export function paletteRGB(geom: number): Color {
+  return new Color(config.render.palette[paletteIndex(geom)].face);
 }
 
-/** Resolve a palette index to a darkened EDGE RGB Color (out-of-range → fallback). */
-export function darkRGB(index: number): Color {
-  const pal = config.render.darkPalette;
-  const hex = index >= 0 && index < pal.length ? pal[index] : config.render.darkFallbackColor;
-  return new Color(hex);
+/** Resolve a geometric color to a darkened EDGE RGB Color (via the active scheme). */
+export function darkRGB(geom: number): Color {
+  return new Color(config.render.palette[paletteIndex(geom)].edge);
 }
 
 /** Map a whole face-color array to RGB (one Color per face). */
@@ -45,18 +66,14 @@ export function faceColorsRGB(face: number[]): Color[] {
 
 // --- "light" palette variants (only used by the _light.png export) ----------
 
-/** Resolve a palette index to a FACE RGB Color in the LIGHT palette. */
-export function paletteRGBLight(index: number): Color {
-  const pal = config.render.light.palette;
-  const hex = index >= 0 && index < pal.length ? pal[index] : config.render.light.fallbackColor;
-  return new Color(hex);
+/** Resolve a geometric color to a FACE RGB Color in the LIGHT palette. */
+export function paletteRGBLight(geom: number): Color {
+  return new Color(config.render.palette[paletteIndex(geom)].l_face);
 }
 
-/** Resolve a palette index to an EDGE RGB Color in the LIGHT (dark) palette. */
-export function darkRGBLight(index: number): Color {
-  const pal = config.render.light.darkPalette;
-  const hex = index >= 0 && index < pal.length ? pal[index] : config.render.light.darkFallbackColor;
-  return new Color(hex);
+/** Resolve a geometric color to an EDGE RGB Color in the LIGHT palette. */
+export function darkRGBLight(geom: number): Color {
+  return new Color(config.render.palette[paletteIndex(geom)].l_edge);
 }
 
 /** Map a whole face-color array to RGB using the LIGHT palette. */
@@ -97,44 +114,31 @@ export function uniformColors(
 }
 
 /**
- * Recognise a "special" dual-pair solid purely from topology (no geometry /
- * relaxation needed), so the special coloring can be applied at commit time. The
- * tetrahedron is deliberately NOT special — it (and its truncations / kisses) is
- * the only family that ever uses color 0.
- *
- *   - "triFace"  = the triangular member (octahedron 6V/8F, icosahedron 12V/20F)
- *   - "polyFace" = its dual (cube 8V/6F squares, dodecahedron 20V/12F pentagons)
+ * The color scheme that best fits a solid, recognised purely from topology, so the
+ * UI can auto-switch when an operation forms one of the classic Platonic solids:
+ *   - tetrahedron (4V/4F)                              → "tetrahedral"
+ *   - octahedron (6V/8F tri) / cube (8V/6F quad)       → "octahedral"
+ *   - icosahedron (12V/20F tri) / dodecahedron (20V/12F penta) → "icosahedral"
+ * Returns null for anything else (the active scheme is then left unchanged).
  */
-export function detectSpecial(mesh: Mesh): "triFace" | "polyFace" | null {
+export function schemeForMesh(mesh: Mesh): SchemeName | null {
   const V = mesh.vertices.length;
   const F = mesh.faces.length;
-  const allTri = mesh.faces.every((f) => f.length === 3);
-  if (allTri && ((V === 6 && F === 8) || (V === 12 && F === 20))) return "triFace";
-  if (V === 8 && F === 6 && mesh.faces.every((f) => f.length === 4)) return "polyFace";
-  if (V === 20 && F === 12 && mesh.faces.every((f) => f.length === 5)) return "polyFace";
+  const sides = (n: number) => mesh.faces.every((f) => f.length === n);
+  if (V === 4 && F === 4 && sides(3)) return "tetrahedral";
+  if (V === 6 && F === 8 && sides(3)) return "octahedral";
+  if (V === 8 && F === 6 && sides(4)) return "octahedral";
+  if (V === 12 && F === 20 && sides(3)) return "icosahedral";
+  if (V === 20 && F === 12 && sides(5)) return "icosahedral";
   return null;
 }
 
 /**
- * The special coloring for a dual-pair solid (only meaningful when `detectSpecial`
- * matched). Edges → 3 for both; the triangular member's faces (and the dual's
- * vertices) → 1, and the dual's faces (with the triangular member's vertices) → 2.
- *   - triFace (octahedron / icosahedron): faces → 1, vertices → 2, edges → 3
- *   - polyFace (cube / dodecahedron):     vertices → 1, faces → 2, edges → 3
- */
-export function specialColorSet(mesh: Mesh, kind: "triFace" | "polyFace"): ColorSet {
-  return kind === "triFace"
-    ? uniformColors(mesh, 2, 3, 1) // vertices 2, edges 3, faces 1
-    : uniformColors(mesh, 1, 3, 2); // vertices 1, edges 3, faces 2
-}
-
-/**
- * Initial colors for a freshly-loaded seed. The tetrahedron keeps the generic
- * coloring (faces → 0, vertices → 1, edges → 2); every other Platonic seed is a
- * special dual-pair solid and gets its special coloring directly.
+ * Initial colors for a freshly-loaded seed: the generic geometric coloring
+ * (faces → 0, vertices → 1, edges → 2). The operations then layer on c+1/c+2/c+3
+ * geometric colors, and the chosen color scheme decides how all of them display.
+ * (There is no longer any per-solid special-casing; the scheme buttons replace it.)
  */
 export function seedColors(mesh: Mesh): ColorSet {
-  const special = detectSpecial(mesh);
-  if (special) return specialColorSet(mesh, special);
   return uniformColors(mesh, 1, 2, 0); // vertices 1, edges 2, faces 0
 }

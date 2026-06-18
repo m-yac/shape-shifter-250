@@ -15,7 +15,7 @@ import { type ColorSet, edgeKey } from "../geometry/colors";
 import { type MorphPlan } from "./types";
 import { type InViewTest } from "./truncate";
 import { joinHeight } from "./kis";
-import { faceMaxPlus1, lerpFaceColors } from "./colorUtil";
+import { faceMax, faceMaxPlus1, lerpFaceColors } from "./colorUtil";
 import { closestLineParam, distancePointToRay } from "../util/lines";
 
 // How far (as a fraction of the centre → edge-midpoint line) the peripheral
@@ -223,6 +223,7 @@ export function buildGyro(
     previewFaces: number[][];
     vertexCount: number;
     vertexColor: number[];
+    vertexColorWelded: number[];
     faceColor: number[];
     faceStart: number[];
     edgeColor: Map<string, number>;
@@ -231,10 +232,14 @@ export function buildGyro(
     const previewFaces: number[][] = [];
     const faceColor: number[] = [];
     const faceStart: number[] = [];
-    const vertexColor: number[] = [];
-    for (let i = 0; i < V; i++) vertexColor[i] = old.vertex[i];
+    const vertexColor: number[] = []; // partial (un-welded) commit
+    const vertexColorWelded: number[] = []; // full-gyro (welded) commit
+    for (let i = 0; i < V; i++) {
+      vertexColor[i] = old.vertex[i];
+      vertexColorWelded[i] = old.vertex[i];
+    }
     const ownerFace = new Map<number, number>(); // new vertex idx → its gyred face id
-    const centerEdges = new Map<string, number>(); // centre spokes (C↔q) → face color
+    const centerEdges = new Map<string, number>(); // centre spokes / centre line
     let idx = V;
 
     for (const f of dcel.faces) {
@@ -261,17 +266,20 @@ export function buildGyro(
       const P: number[] = []; // boundary vertex ids p_0..p_{2n-1}
       for (let i = 0; i < m; i++) P.push(bh[(s + i) % m].origin.id);
 
+      const cf = faceMax(f, old); // `c` for this face
       const apex = apexOf(f);
       const hasCenter = n >= 3;
       const center = hasCenter ? idx++ : -1;
       if (hasCenter) {
-        vertexColor[center] = old.face[f.id]; // the inner centre keeps the face color
+        // The inner centre vertex replaces the original face → keeps the face color.
+        vertexColor[center] = old.face[f.id];
+        vertexColorWelded[center] = old.face[f.id];
         ownerFace.set(center, f.id);
       }
       const qIdx: number[] = [];
-      // The centre vertex replaces the original face, so its spoke edges (C↔q)
-      // take the face color (matching the centre vertex itself).
-      const spokeColor = old.face[f.id];
+      // Centre spokes (C↔q) are the "surrounding edges" → c+3 (n>2 always holds
+      // here, since spokes only exist when there is a centre, i.e. n≥3).
+      const spokeColor = cf + 3;
       const qTarget: Vector3[] = [];
       const qHe: HalfEdge[] = [];
       for (let j = 0; j < n; j++) {
@@ -283,11 +291,18 @@ export function buildGyro(
         const a = dcel.vertices[P[(2 * j - 1 + m) % m]].position;
         const b = dcel.vertices[P[2 * j]].position;
         qTarget.push(a.clone().add(b).multiplyScalar(0.5));
+        // q is a NEW surrounding vertex: full gyro → c+2; partial gyro shows the
+        // original edge it would weld across.
         vertexColor[q] = old.edge.get(edgeKey(he.origin.id, he.next.origin.id)) ?? 0;
+        vertexColorWelded[q] = cf + 2;
         ownerFace.set(q, f.id);
       }
       if (hasCenter) {
         for (const q of qIdx) centerEdges.set(edgeKey(center, q), spokeColor);
+      } else {
+        // n=2: no centre face, just the lone centre line between the two q's,
+        // which (like the snub n=2 case) takes the original face color.
+        centerEdges.set(edgeKey(qIdx[0], qIdx[1]), old.face[f.id]);
       }
 
       // Tiling: per j, a pentagon (or quad when n=2) meeting at C and a triangle.
@@ -308,9 +323,9 @@ export function buildGyro(
       gfaces.push({ faceId: f.id, center, apex, qIdx, qTarget, qHe });
     }
 
-    // Original edges keep their color; the centre spokes (C↔q) take the face
-    // color (set above); every other new edge (q↔boundary, internal) ← 1 + max
-    // adjacent to the owning original face.
+    // Original edges keep their color; the centre spokes / centre line take the
+    // colors set above (c+3, or the face color when n=2); every other new edge
+    // (q↔boundary, internal — the kis-corresponding edges) ← c+1.
     const edgeColor = new Map(old.edge);
     for (const [k, c] of centerEdges) edgeColor.set(k, c);
     for (const loop of previewFaces) {
@@ -324,7 +339,7 @@ export function buildGyro(
       }
     }
 
-    return { gfaces, previewFaces, vertexCount: idx, vertexColor, faceColor, faceStart, edgeColor };
+    return { gfaces, previewFaces, vertexCount: idx, vertexColor, vertexColorWelded, faceColor, faceStart, edgeColor };
   }
 
   const variants = ([0, 1] as const).map((startColor) => {
@@ -470,9 +485,11 @@ export function buildGyro(
       const { faces, faceColors } = weldedFaces(va.previewFaces, va.faceColor);
       const edge = new Map(va.edgeColor);
       for (const [a, b] of dissolveList) edge.delete(edgeKey(a, b));
+      // Full gyro: the new surrounding q vertices take c+2 (vs. the weld-across
+      // edge color used during a partial gyro).
       return {
         mesh: { vertices: positions(skew), faces },
-        colors: { vertex: va.vertexColor.slice(), face: faceColors, edge },
+        colors: { vertex: va.vertexColorWelded.slice(), face: faceColors, edge },
       };
     }
     return {

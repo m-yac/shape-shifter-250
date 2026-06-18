@@ -9,9 +9,8 @@ import { type Polyhedron, faceNormalHE, faceCentroidHE } from "../geometry/polyh
 import { type ColorSet, edgeKey } from "../geometry/colors";
 import { type MorphPlan } from "./types";
 import { weldVertexPairs } from "./weld";
-import { lerpFaceColors } from "./colorUtil";
+import { lerpFaceColors, vertexMaxPlus1 } from "./colorUtil";
 import { closestLineParam, distancePointToRay } from "../util/lines";
-import { config } from "../config";
 
 /** A point is "in view" if any of the given (outward) normals faces the camera. */
 export type InViewTest = (point: Vector3, normals: Vector3[]) => boolean;
@@ -175,7 +174,7 @@ export function buildTruncate(
   // (i) n-gon perimeter edges — new edges around each truncated vertex.
   for (const v of dcel.vertices) {
     if (!truncated.has(v.id)) continue;
-    const mp = config.render.palette.length;
+    const mp = vertexMaxPlus1(v, old); // new n-gon perimeter edges → c+1
     const ring = outgoingHalfEdges(v).map((h) => cutIndex.get(h.id)!);
     for (let k = 0; k < ring.length; k++) {
       edgeColor.set(edgeKey(ring[k], ring[(k + 1) % ring.length]), mp);

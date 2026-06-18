@@ -14,9 +14,8 @@ import { type ColorSet, edgeKey } from "../geometry/colors";
 import { type MorphPlan } from "./types";
 import { type InViewTest } from "./truncate";
 import { weldVertexPairs } from "./weld";
-import { lerpFaceColors } from "./colorUtil";
+import { lerpFaceColors, vertexMax, vertexMaxPlus1 } from "./colorUtil";
 import { closestLineParam, distancePointToRay } from "../util/lines";
-import { config } from "../config";
 
 // Cut fraction along an edge that an "outer" (triangle-only) cut vertex reaches at
 // t=1, and the smaller fraction the "inner" (n-gon) cut vertices reach. The gap is
@@ -232,8 +231,9 @@ export function buildSnub(
     const i = cutIndex.get(he.id);
     if (i !== undefined) cutOwner.set(i, he.origin.id);
   }
+  // Ear-side edges (the truncate-corresponding new edges) → c+1, per snubbed vertex.
   const mpCache = new Map<number, number>();
-  for (const id of snubbed) mpCache.set(id, config.render.palette.length);
+  for (const id of snubbed) mpCache.set(id, vertexMaxPlus1(dcel.vertices[id], old));
 
   // Surviving original-edge remnants (same as truncate) — keep the original color.
   function remnantEdges(): Map<string, number> {
@@ -269,13 +269,15 @@ export function buildSnub(
   function buildFaces(outerHe: Set<number>): {
     faces: number[][];
     faceColor: number[];
+    faceColorWelded: number[];
     faceStart: number[];
     centerEdges: Map<string, number>;
   } {
     const faces: number[][] = [];
-    const faceColor: number[] = [];
+    const faceColor: number[] = []; // partial (un-welded) commit colors
+    const faceColorWelded: number[] = []; // full-snub (welded) commit colors
     const faceStart: number[] = [];
-    const centerEdges = new Map<string, number>(); // central n-gon perimeter → vertex color
+    const centerEdges = new Map<string, number>(); // central n-gon perimeter
 
     // (a) one polygon per original face — identical to truncate's truncated face.
     for (const f of dcel.faces) {
@@ -294,16 +296,20 @@ export function buildSnub(
       } while (h !== start);
       faces.push(loop);
       faceColor.push(old.face[f.id]);
+      faceColorWelded.push(old.face[f.id]);
       faceStart.push(old.face[f.id]);
     }
 
     // (b) per snubbed vertex: central n-gon (inner cut verts) + n ear triangles.
-    // Central n-gon ← the vertex color (the "inner" element keeps it); each ear ←
-    // the original edge it welds across, emerging from the vertex color.
+    // Central n-gon ← the vertex color (the "inner" element keeps it). Each ear is
+    // a NEW surrounding face: at full snub it takes c+2, but a partial snub shows
+    // the original edge it would weld across (emerging from the vertex color).
     for (const v of dcel.vertices) {
       if (!snubbed.has(v.id)) continue;
       const H = outgoingHalfEdges(v);
       const m = H.length; // = 2n
+      const n = m / 2;
+      const cv = vertexMax(v, old); // `c` for this vertex
       const c = H.map((h) => cutIndex.get(h.id)!);
 
       const ngon: number[] = [];
@@ -313,15 +319,17 @@ export function buildSnub(
       if (ngon.length >= 3) {
         faces.push(ngon); // a 2-gon (n=2) is degenerate as a face, but see below
         faceColor.push(old.vertex[v.id]);
+        faceColorWelded.push(old.vertex[v.id]);
         faceStart.push(old.vertex[v.id]);
       }
-      // The central n-gon replaces the original vertex, so its perimeter takes the
-      // vertex color — including the lone "center line" diagonal when n=2 (where
-      // there is no central face, just the shared edge between the two ears).
+      // The central n-gon's perimeter (the ear bases): for n>2 these "surrounding
+      // edges" take c+3; for n=2 there is no central face, just the lone center
+      // line between the two ears, which takes the vertex color.
+      const perimColor = n > 2 ? cv + 3 : old.vertex[v.id];
       for (let i = 0; i < ngon.length; i++) {
         const j = (i + 1) % ngon.length;
         if (ngon[i] !== ngon[j]) {
-          centerEdges.set(edgeKey(ngon[i], ngon[j]), old.vertex[v.id]);
+          centerEdges.set(edgeKey(ngon[i], ngon[j]), perimColor);
         }
       }
 
@@ -329,10 +337,11 @@ export function buildSnub(
         if (!outerHe.has(H[k].id)) continue; // ear around each outer cut vert
         faces.push([c[(k - 1 + m) % m], c[k], c[(k + 1) % m]]);
         faceColor.push(old.edge.get(edgeKey(H[k].origin.id, H[k].next.origin.id)) ?? 0);
+        faceColorWelded.push(cv + 2);
         faceStart.push(old.vertex[v.id]);
       }
     }
-    return { faces, faceColor, faceStart, centerEdges };
+    return { faces, faceColor, faceColorWelded, faceStart, centerEdges };
   }
 
   // Edges: surviving original-edge remnants keep their color; the central n-gon
@@ -361,6 +370,7 @@ export function buildSnub(
       outerHe,
       previewFaces: built.faces,
       faceColor: built.faceColor,
+      faceColorWelded: built.faceColorWelded,
       faceStart: built.faceStart,
       edgeColor: buildEdges(built.faces, built.centerEdges),
     };
@@ -434,9 +444,11 @@ export function buildSnub(
       vertices: positions(t),
       faces: va.previewFaces.map((f) => f.slice()),
     };
+    // The full (welded) snub uses the rule colors (ears → c+2); a partial snub
+    // keeps the weld-across edge color on those ears.
     const colors: ColorSet = {
       vertex: vertexColor.slice(),
-      face: va.faceColor.slice(),
+      face: (weld ? va.faceColorWelded : va.faceColor).slice(),
       edge: new Map(va.edgeColor),
     };
     return weld ? weldVertexPairs(mesh, weldPairs, colors) : { mesh, colors };

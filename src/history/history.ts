@@ -1,4 +1,12 @@
 import { type Polyhedron } from "../geometry/polyhedron";
+import { type SchemeName } from "../geometry/colors";
+import { type Strategy } from "../solver/solver";
+
+/** The view options (color scheme + regularization strategy) remembered per entry. */
+export interface HistoryOptions {
+  scheme: SchemeName;
+  strategy: Strategy;
+}
 
 /**
  * One committed state in the edit history. The seed (root) entry has `isSeed`
@@ -14,6 +22,9 @@ export interface HistoryEntry {
   /** True when the solver couldn't planarize this state. */
   invalid: boolean;
   isSeed: boolean;
+  /** The color scheme + regularization strategy in effect at this entry. These are
+   *  restored when jumping here, and can be changed in place without branching. */
+  options: HistoryOptions;
 }
 
 /**
@@ -27,18 +38,28 @@ export class History {
   private index = -1;
 
   /** Begin a fresh timeline rooted at a seed. */
-  reset(poly: Polyhedron, label: string): void {
-    this.entries = [{ poly, label, name: null, invalid: false, isSeed: true }];
+  reset(poly: Polyhedron, label: string, options: HistoryOptions): void {
+    this.entries = [
+      { poly, label, name: null, invalid: false, isSeed: true, options: { ...options } },
+    ];
     this.index = 0;
   }
 
   /** Append a new operation state after the current one, dropping any redo tail.
    *  Returns the index of the new (now current) entry. */
-  push(poly: Polyhedron, label: string): number {
+  push(poly: Polyhedron, label: string, options: HistoryOptions): number {
     this.entries.length = this.index + 1; // discard the redo tail
-    this.entries.push({ poly, label, name: null, invalid: false, isSeed: false });
+    this.entries.push({
+      poly, label, name: null, invalid: false, isSeed: false, options: { ...options },
+    });
     this.index = this.entries.length - 1;
     return this.index;
+  }
+
+  /** Update the remembered view options on the current entry (no new entry / branch). */
+  setOptions(options: HistoryOptions): void {
+    const e = this.entries[this.index];
+    if (e) e.options = { ...options };
   }
 
   /** Record the identified name / validity for an entry once known. */

@@ -2,10 +2,12 @@ import { Vector3, type PerspectiveCamera, type Ray } from "three";
 import { type ArcballControls } from "three/examples/jsm/controls/ArcballControls.js";
 import { Polyhedron } from "../geometry/polyhedron";
 import {
-  detectSpecial,
-  specialColorSet,
   faceColorsRGB,
   edgeKey,
+  setColorScheme,
+  getColorScheme,
+  schemeForMesh,
+  type SchemeName,
 } from "../geometry/colors";
 import { type MorphPlan, type OperationKind } from "../operations/types";
 import { buildTruncate, closestIncidentEdge } from "../operations/truncate";
@@ -20,7 +22,7 @@ import { SceneView, type Marker, type MarkerKind } from "../render/sceneView";
 import { Picker } from "./picker";
 import { Selection } from "./selection";
 import { Readout } from "../ui/readout";
-import { History, type HistoryEntry } from "../history/history";
+import { History, type HistoryEntry, type HistoryOptions } from "../history/history";
 import { HistoryPanel } from "../ui/historyPanel";
 import { type Screen } from "../ui/screen";
 import { type GlitchOverlay } from "../ui/glitch";
@@ -142,6 +144,8 @@ export class DragController {
       (s) => this.beginStrategy(s),
       () => this.endStrategy(),
     );
+    this.shapes.setActiveColorScheme(getColorScheme());
+    this.shapes.bindColorScheme((name) => this.selectColorScheme(name as SchemeName));
     this.panel = new HistoryPanel(
       screen,
       (index) => this.jumpTo(index),
@@ -157,7 +161,7 @@ export class DragController {
     }
     this.attach();
     this.selection = new Selection(this.readout);
-    this.history.reset(initial, seedLabel);
+    this.history.reset(initial, seedLabel, this.currentOptions());
     this.view.setPolyhedron(this.current, false);
     this.runIdentify(this.current);
   }
@@ -186,9 +190,14 @@ export class DragController {
     this.invalid = false;
     this.current = poly;
     this.selection.clear();
-    this.history.reset(poly, seedLabel);
+    this.history.reset(poly, seedLabel, this.currentOptions());
     this.view.setPolyhedron(poly, false);
     this.runIdentify(poly);
+  }
+
+  /** The view options (scheme + strategy) currently in effect, for the history. */
+  private currentOptions(): HistoryOptions {
+    return { scheme: getColorScheme(), strategy: this.strategy };
   }
 
   // ---- undo / redo / jump --------------------------------------------------
@@ -219,6 +228,12 @@ export class DragController {
     this.selection.clear();
     this.current = entry.poly;
     this.invalid = entry.invalid;
+    // Restore the color scheme + regularization strategy remembered for this entry
+    // (before rendering, so the surface comes back with the right colors).
+    setColorScheme(entry.options.scheme);
+    this.shapes.setActiveColorScheme(entry.options.scheme);
+    this.strategy = entry.options.strategy;
+    this.shapes.setActiveStrategy(entry.options.strategy);
     this.view.setPolyhedron(entry.poly, entry.invalid);
     this.refreshHighlights();
     this.runIdentify(entry.poly);
@@ -275,8 +290,31 @@ export class DragController {
   selectStrategy(s: Strategy): void {
     this.strategy = s;
     this.shapes.setActiveStrategy(s);
+    this.history.setOptions(this.currentOptions()); // remember on this entry (no branch)
     if (this.mode !== "idle" || !config.solver.enabled) return;
     this.startSolve(this.current);
+  }
+
+  /**
+   * Switch the active color SCHEME (the OPTIONS "Colors" buttons) and recolor the
+   * current shape right away. The geometric element colors don't change — only how
+   * they map to the palette — so no re-solve is needed. A live drag's preview reads
+   * the scheme every frame, so it picks the change up on its own.
+   */
+  selectColorScheme(name: SchemeName): void {
+    if (name === getColorScheme()) return;
+    // Capture the current face colors (old scheme), switch, then fade to the new
+    // scheme's colors over the same colorFadeSeconds used after an operation.
+    const fromRGB = faceColorsRGB(this.current.colors.face);
+    setColorScheme(name);
+    this.shapes.setActiveColorScheme(name);
+    this.history.setOptions(this.currentOptions()); // update this entry in place (no branch)
+    if (this.mode === "idle") {
+      const toRGB = faceColorsRGB(this.current.colors.face);
+      this.view.setPolyhedron(this.current, this.invalid); // rebuilds edges (new scheme) + markers
+      this.view.startColorFade(fromRGB, toRGB, config.render.colorFadeSeconds);
+      this.refreshHighlights();
+    }
   }
 
   /**
@@ -287,6 +325,7 @@ export class DragController {
   beginStrategy(s: Strategy): void {
     this.strategy = s;
     this.shapes.setActiveStrategy(s);
+    this.history.setOptions(this.currentOptions()); // remember on this entry (no branch)
     if (this.mode !== "idle" || !config.solver.enabled) return;
     this.startSolve(this.current, true);
   }
@@ -680,22 +719,25 @@ export class DragController {
         this.view.setPolyhedron(this.current, this.invalid);
       } else {
         const active = this.activeSlot(this.drag);
-        const { mesh, colors: normal } = active.plan.commit(this.drag.t, this.drag.weld);
-        // Special case: the icosahedron / dodecahedron get their own coloring,
-        // which (real recolor) becomes the shape's stored colors and propagates.
-        const special = detectSpecial(mesh);
-        const finalColors = special ? specialColorSet(mesh, special) : normal;
+        const { mesh, colors: finalColors } = active.plan.commit(this.drag.t, this.drag.weld);
         const label = DragController.label(
           active.plan.kind,
           this.drag.weld,
           this.drag.selCount,
         );
-        // Colors at release: the welded form already matches its normal colors at
-        // t=1, so fade from those; a partial (un-welded) commit fades from the
-        // interpolated drag colors. Then fade to the final (possibly special) ones.
+        // Colors at release: the welded form's committed colors are taken as-is
+        // (any difference from the drag's t=1 look snaps instantly); a partial
+        // (un-welded) commit fades from the interpolated drag colors.
         const fromRGB = this.drag.weld
-          ? faceColorsRGB(normal.face)
+          ? faceColorsRGB(finalColors.face)
           : active.plan.previewFaceColors(this.drag.t);
+        // Forming a classic Platonic solid auto-switches to its color scheme; the
+        // fade below then carries the faces from the old scheme into the new one.
+        const auto = schemeForMesh(mesh);
+        if (auto && auto !== getColorScheme()) {
+          setColorScheme(auto);
+          this.shapes.setActiveColorScheme(auto);
+        }
         const toRGB = faceColorsRGB(finalColors.face);
         // The topology changed, so the old vertex/face ids no longer mean anything.
         this.selection.clear();
@@ -734,7 +776,7 @@ export class DragController {
       this.firstEdit = false;
       this.onFirstEdit();
     }
-    this.history.push(poly, label);
+    this.history.push(poly, label, this.currentOptions());
     this.renderHistory();
     if (config.solver.enabled) {
       this.startSolve(poly); // mutates poly's vertices in place across frames

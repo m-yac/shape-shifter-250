@@ -317,6 +317,10 @@ export const config = {
         label: "Regular",
         buttons: { edges: "Canonical", faces: "Faces", vertices: "Vertices" },
       },
+      colorsLine: {
+        label: "Colors",
+        buttons: { tetrahedral: "Tetra", octahedral: "Octa", icosahedral: "Icosa" },
+      },
     },
 
     // The new-shape DISCOVERY popup. `banner` is the headline (the first
@@ -585,7 +589,7 @@ export const config = {
   },
 
   // ---------------------------------------------------------------------------
-  // RENDER — minimal, functional look only (no decorative visuals yet).
+  // RENDER
   // ---------------------------------------------------------------------------
   render: {
     backgroundColor: 0x10141c, // backlight color
@@ -593,23 +597,24 @@ export const config = {
     faceColor: 0xffffff, // base/fallback shape color (white); per-face colors come from `palette`
     faceOpacity: 0.92,
 
-    // Per-element color palette. Element colors are INDICES into this array
-    // (see geometry/colors.ts). Out-of-range indices resolve to `fallbackColor`.
-    // FACES use `palette`; EDGES use `darkPalette` (the same hues, darkened).
+    // Colors available for faces and edges in both dark and light modes
     palette: [
-      0xffffff, // 0 white (the original face color)
-      0xffd24a, // 1 yellow
-      0xe0524a, // 2 red
-      0x4a78e0, // 3 blue
+      { face: 0xffffff, edge: 0x666666, l_face: 0xe6e6e6, l_edge: 0x555555 }, // white (fallback color)
+      { face: 0xffd24a, edge: 0x66541e, l_face: 0xf2c230, l_edge: 0x66541e }, // yellow
+      { face: 0xe0524a, edge: 0x5a211e, l_face: 0xe0524a, l_edge: 0x5a211e }, // red
+      { face: 0x4a78e0, edge: 0x1e305a, l_face: 0x4a78e0, l_edge: 0x1e305a }, // blue
     ],
-    darkPalette: [
-      0x666666, // 0 dark white / grey
-      0x66541e, // 1 dark yellow
-      0x5a211e, // 2 dark red
-      0x1e305a, // 3 dark blue
-    ],
-    fallbackColor: 0xffffff, // faces: missing / out-of-range index
-    darkFallbackColor: 0x666666, // edges: missing / out-of-range index
+    // Mapping of a geometric "color" (an unbounded index assigned by the Conway
+    // operations) to a `palette` entry. Out-of-range geometric colors fall back to
+    // palette entry 0 (white). The user switches schemes via the OPTIONS buttons.
+    colorSchemes: {
+      tetrahedral: [0, 1, 2, 3],
+      octahedral:  [1, 1, 2, 3],
+      icosahedral: [1, 1, 3, 2, 3, 1]
+    },
+    // The color scheme selected on load (a key of `colorSchemes`).
+    defaultColorScheme: "tetrahedral",
+
     // How long (seconds) the face colors fade from the drag colors to the final
     // committed colors after release (also drives the special-solid recolor).
     colorFadeSeconds: 0.4,
@@ -649,28 +654,13 @@ export const config = {
 
     // "LIGHT" EXPORT LOOK — used ONLY by the <name>_light.png save: a clean,
     // printable render (square, high-res, no bloom, white background). The on-
-    // screen palette is tuned for a dark backlight, so it gets light variants
-    // here: index 0 (white) becomes a light grey so it reads on white paper, and
-    // the faces are drawn opaque. Edges reuse a dark palette (already legible on
-    // white). Indices line up 1:1 with `palette` / `darkPalette` above.
+    // screen palette is tuned for a dark backlight, so each palette entry carries
+    // `l_face` / `l_edge` light variants (e.g. white → light grey so it reads on
+    // white paper); the faces are also drawn opaque.
     light: {
       resolution: 2048, // square px of the exported image
       backgroundColor: 0xffffff, // white paper background
       faceOpacity: 1, // opaque (the on-screen faces are translucent)
-      palette: [
-        0xe6e6e6, // 0 white -> light grey (so it reads on white)
-        0xf2c230, // 1 yellow (a touch deeper to read on white)
-        0xe0524a, // 2 red
-        0x4a78e0, // 3 blue
-      ],
-      darkPalette: [
-        0x555555, // 0 grey
-        0x66541e, // 1 dark yellow
-        0x5a211e, // 2 dark red
-        0x1e305a, // 3 dark blue
-      ],
-      fallbackColor: 0xe6e6e6, // faces: missing / out-of-range index
-      darkFallbackColor: 0x555555, // edges: missing / out-of-range index
     },
   },
 } as const;

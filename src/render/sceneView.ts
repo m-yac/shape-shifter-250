@@ -86,7 +86,7 @@ function faceGeometryArrays(
   const colors: number[] = [];
   for (let fi = 0; fi < mesh.faces.length; fi++) {
     const f = mesh.faces[fi];
-    const col = faceColors[fi] ?? new Color(config.render.fallbackColor);
+    const col = faceColors[fi] ?? new Color(config.render.palette[0].face);
     const n = newellNormal(f.map((i) => mesh.vertices[i]));
     // Orient outward (same centroid convention as the markers / highlights): the
     // solid is centered at the origin, so a face's outward direction is its
@@ -380,8 +380,8 @@ export class SceneView {
     const k = Math.min(1, (nowMs - f.start) / f.durMs);
     const ease = k * k * (3 - 2 * k); // smoothstep
     for (let i = 0; i < this.displayFaceColors.length; i++) {
-      const from = f.from[i] ?? new Color(config.render.fallbackColor);
-      const to = f.to[i] ?? new Color(config.render.fallbackColor);
+      const from = f.from[i] ?? new Color(config.render.palette[0].face);
+      const to = f.to[i] ?? new Color(config.render.palette[0].face);
       this.displayFaceColors[i] = from.clone().lerp(to, ease);
     }
     this.writeFaceColors();
@@ -435,7 +435,7 @@ export class SceneView {
     const arr = attr.array as Float32Array;
     let o = 0;
     for (let fi = 0; fi < this.faceVertCounts.length; fi++) {
-      const c = this.displayFaceColors[fi] ?? new Color(config.render.fallbackColor);
+      const c = this.displayFaceColors[fi] ?? new Color(config.render.palette[0].face);
       for (let k = 0; k < this.faceVertCounts[fi]; k++) {
         arr[o++] = c.r;
         arr[o++] = c.g;
