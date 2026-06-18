@@ -340,6 +340,70 @@ export const config = {
         "Library: {count} / {total} total shapes",
       ],
     },
+
+    // OPERATION TEXT — keyed `operation → weld → category → [label, name]`.
+    //   • label — the action shown in the HISTORY panel rows ("Rectify", "3-Truncate").
+    //   • name  — the modifier prepended to the most recent named ancestor to derive a
+    //             name for an otherwise-unidentified shape (e.g. "Augmented Truncated Cube"),
+    //             shown in the bottom-left box and exported filenames.
+    // `weld` is the unwelded vs welded (rectify / join, full snub / gyro) end of the drag.
+    // The category reflects which elements the operation acted on:
+    //   whole  — the whole solid (every vertex/face of its kind);
+    //   arity  — all and only the elements of a single arity (degree-n vertices /
+    //            n-gon faces) — here `{n}` is that arity;
+    //   subset — any other strict subset — here `{n}` is the number of elements.
+    // `{noun}` becomes vertex/vertices or face/faces agreeing with `{n}`; in a name's
+    // "{n}-" prefix a single element drops the count ("Augmented", not "1-Augmented").
+    operationLabels: {
+      truncate: {
+        unwelded: {
+          whole:  ["Truncate", "Truncated"],
+          arity:  ["{n}-Truncate", "{n}-Truncated"],
+          subset: ["Truncate {n} {noun}", "Partially Truncated"],
+        },
+        welded: {
+          whole:  ["Rectify", "Rectified"],
+          arity:  ["{n}-Truncate/Rectify", "{n}-Truncated/Rectified"],
+          subset: ["Truncate/Rectify {n} {noun}", "Partially Truncated/Rectified"],
+        },
+      },
+      kis: {
+        unwelded: {
+          whole:  ["Kis", "Kis"],
+          arity:  ["{n}-Kis", "{n}-Kis"],
+          subset: ["Kis {n} {noun}", "{n}-Augmented"],
+        },
+        welded: {
+          whole:  ["Join", "Joined"],
+          arity:  ["{n}-Kis/Join", "{n}-Kis/Joined"],
+          subset: ["Kis/Join {n} {noun}", "{n}-Augmented / Partially Joined"],
+        },
+      },
+      snub: {
+        unwelded: {
+          whole:  ["Incompletely Snub", "Incomplete Snub"],
+          arity:  ["Incompletely {n}-Snub", "Incomplete {n}-Snub"],
+          subset: ["Incompletely Snub {n} {noun}", "Partial Incomplete Snub"],
+        },
+        welded: {
+          whole:  ["Snub", "Snub"],
+          arity:  ["{n}-Snub", "{n}-Snub"],
+          subset: ["Snub {n} {noun}", "Partial Snub"],
+        },
+      },
+      gyro: {
+        unwelded: {
+          whole:  ["Incompletely Gyro", "Incomplete Gyro"],
+          arity:  ["Incompletely {n}-Gyro", "Incomplete {n}-Gyro"],
+          subset: ["Incompletely Gyro {n} {noun}", "Incomplete Partial Gyro"],
+        },
+        welded: {
+          whole:  ["Gyro", "Gyro"],
+          arity:  ["{n}-Gyro", "{n}-Gyro"],
+          subset: ["Gyro {n} {noun}", "Partial Gyro"],
+        },
+      },
+    },
   },
 
   // ---------------------------------------------------------------------------

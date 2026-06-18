@@ -9,11 +9,12 @@ import {
   schemeForMesh,
   type SchemeName,
 } from "../geometry/colors";
-import { type MorphPlan, type OperationKind } from "../operations/types";
+import { type MorphPlan } from "../operations/types";
 import { buildTruncate, closestIncidentEdge } from "../operations/truncate";
 import { buildKis } from "../operations/kis";
 import { buildSnub } from "../operations/snub";
 import { buildGyro } from "../operations/gyro";
+import { operationLabel, classifySelection, type OpDescriptor } from "../operations/naming";
 import { RelaxSolver, type Strategy } from "../solver/solver";
 import { extractTopology } from "../solver/topology";
 import { type Signature, describeSignature } from "../identify/configurations";
@@ -197,9 +198,10 @@ export class DragController {
     return this.current;
   }
 
-  /** The identified name of the current shape (null if unidentified), for filenames. */
+  /** The display name of the current shape — its identified name, or the derived
+   *  history name (e.g. "Augmented Truncated Cube") when unidentified — for filenames. */
   currentName(): string | null {
-    return this.lastName;
+    return this.history.list[this.history.current]?.displayName ?? this.lastName;
   }
 
   /** Force the HISTORY panel visible now (used when the intro is skipped, so all
@@ -271,38 +273,6 @@ export class DragController {
 
   private renderHistory(): void {
     this.panel.render(this.history.list, this.history.current);
-  }
-
-  /**
-   * Human-readable label for a committed operation (e.g. "Rectify", "Kis 1 face").
-   * `selCount` is null when the operation affected the whole solid.
-   *
-   * Welding (the max end) only fully Rectifies/Joins when every element takes part.
-   * On a partial selection the welded end is a HYBRID — elements with a selected
-   * neighbour merge (rectify/join) while those bordering unselected ones stay cut
-   * (truncate/kis) — so it reads "Truncate/Rectify N" / "Kis/Join N".
-   */
-  private static label(
-    kind: OperationKind,
-    weld: boolean,
-    selCount: number | null,
-  ): string {
-    const partial = selCount != null;
-    let base: string;
-    if (kind === "truncate") {
-      base = !weld ? "Truncate" : partial ? "Truncate/Rectify" : "Rectify";
-    } else if (kind === "kis") {
-      base = !weld ? "Kis" : partial ? "Kis/Join" : "Join";
-    } else {
-      base = kind === "snub" ? "Snub" : "Gyro";
-      if (!weld) { base = "Partial " + base; }
-    }
-    if (!partial) return base;
-    const onFaces = kind === "kis" || kind === "gyro";
-    const noun = onFaces
-      ? selCount === 1 ? "face" : "faces"
-      : selCount === 1 ? "vertex" : "vertices";
-    return `${base} ${selCount} ${noun}`;
   }
 
   /** Re-run the active strategy's relaxation on the current shape (debug `relaxKey`
@@ -852,11 +822,17 @@ export class DragController {
       } else {
         const active = this.activeSlot(this.drag);
         const { mesh, colors: finalColors } = active.plan.commit(this.drag.t, this.drag.weld);
-        const label = DragController.label(
+        // `this.current` is still the pre-operation shape here (committed below), so
+        // the label / op descriptor classify against the geometry that was acted on.
+        const label = operationLabel(
           active.plan.kind,
           this.drag.weld,
-          this.drag.selCount,
+          this.current,
+          this.drag.sel,
+          this.drag.kind,
         );
+        const { category, n } = classifySelection(this.current, this.drag.sel, this.drag.kind);
+        const op: OpDescriptor = { kind: active.plan.kind, weld: this.drag.weld, category, n };
         // Colors at release: the welded form's committed colors are taken as-is
         // (any difference from the drag's t=1 look snaps instantly); a partial
         // (un-welded) commit fades from the interpolated drag colors.
@@ -881,7 +857,7 @@ export class DragController {
           { faceColors: fromRGB, edgeColors: finalColors.edge },
         );
         this.view.startColorFade(fromRGB, toRGB, config.render.colorFadeSeconds);
-        this.commitPoly(poly, label);
+        this.commitPoly(poly, label, op);
       }
     } else if (this.mode === "pending" && this.pending) {
       // a click (no drag): selection bookkeeping
@@ -913,14 +889,14 @@ export class DragController {
     }
   }
 
-  private commitPoly(poly: Polyhedron, label: string): void {
+  private commitPoly(poly: Polyhedron, label: string, op: OpDescriptor): void {
     this.current = poly;
     this.invalid = false;
     if (this.firstEdit) {
       this.firstEdit = false;
       this.onFirstEdit();
     }
-    this.history.push(poly, label, this.currentOptions());
+    this.history.push(poly, label, this.currentOptions(), op);
     this.renderHistory();
     if (config.solver.enabled) {
       this.startSolve(poly); // mutates poly's vertices in place across frames
@@ -948,17 +924,20 @@ export class DragController {
     const { name, signature } = identify(poly);
     this.lastName = name;
     this.lastSignature = signature;
-    if (discover && config.discovery.enabled && !this.invalid && name) {
+    if (discover && !this.invalid && name) {
       const { isNew, first } = this.discoveries.add(name);
       this.shapes.setCount(this.discoveries.count);
-      if (isNew) this.celebrate(name, first);
+      if (config.discovery.enabled && isNew) this.celebrate(name, first);
     }
     // Record the result against the current history entry (invalid states show no
     // name). This also runs for the seed root and on restore — both harmless.
     this.history.annotate(this.history.current, this.invalid ? null : name, this.invalid);
     this.renderHistory();
+    // Show the derived history name (modifier + nearest known ancestor) when the
+    // shape isn't a known polyhedron; fall back to the raw identify result.
+    const display = this.history.list[this.history.current]?.displayName ?? name;
     this.readout.setPoly({
-      poly, name, signature,
+      poly, name: display, signature,
       invalid: this.invalid,
       solving: false,
     });

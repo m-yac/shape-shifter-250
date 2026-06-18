@@ -107,8 +107,8 @@ function sameSet(a: Set<number>, b: Set<number>): boolean {
 const DRAG_VERB: Record<OperationKind, [unwelded: string, welded: string]> = {
   truncate: ["Truncating", "Rectifying"],
   kis: ["Kis-ing", "Joining"],
-  snub: ["Partially Snubbing", "Snubbing"],
-  gyro: ["Partially Gyro-ing", "Gyro-ing"],
+  snub: ["Incompletely Snubbing", "Snubbing"],
+  gyro: ["Incompletely Gyro-ing", "Gyro-ing"],
 };
 
 /**

@@ -257,7 +257,9 @@ window.addEventListener("keydown", (e) => {
   }
 
   if (e.key.toLowerCase() === config.seeds.resetKey) {
-    controller.load(seedPoly(currentSeed), seedLabel(currentSeed));
+    // Same as clicking the first HISTORY entry: jump back to the seed root,
+    // keeping the timeline intact (rather than wiping it with a fresh load).
+    controller.jumpTo(0);
     rig.frame(new Vector3());
   }
 });

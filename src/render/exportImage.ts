@@ -22,9 +22,10 @@ import { SceneView } from "./sceneView";
  * =============================================================================
  */
 
-/** Lower-case the shape name and turn runs of whitespace into underscores. */
+/** Lower-case the shape name, turn slashes into hyphens (e.g. "Truncate/Rectify"),
+ *  and runs of whitespace into underscores. */
 export function fileBase(name: string | null | undefined): string {
-  const base = (name ?? "").trim().toLowerCase().replace(/\s+/g, "_");
+  const base = (name ?? "").trim().toLowerCase().replace(/\//g, "-").replace(/\s+/g, "_");
   return base || "polyhedron";
 }
 

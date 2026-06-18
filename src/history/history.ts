@@ -1,6 +1,7 @@
 import { type Polyhedron } from "../geometry/polyhedron";
 import { type SchemeName } from "../geometry/colors";
 import { type Strategy } from "../solver/solver";
+import { type OpDescriptor, composeName } from "../operations/naming";
 
 /** The view options (color scheme + regularization strategy) remembered per entry. */
 export interface HistoryOptions {
@@ -19,6 +20,12 @@ export interface HistoryEntry {
   label: string;
   /** Identified name of the resulting shape (filled in after the solve). */
   name: string | null;
+  /** The display name: the identified `name` when known, otherwise a name derived
+   *  by prepending this operation's modifier to the nearest named ancestor (e.g.
+   *  "Augmented Truncated Cube"). Null while unresolved / for invalid states. */
+  displayName: string | null;
+  /** The operation that produced this entry (null for the seed root). */
+  op: OpDescriptor | null;
   /** True when the solver couldn't planarize this state. */
   invalid: boolean;
   isSeed: boolean;
@@ -40,17 +47,17 @@ export class History {
   /** Begin a fresh timeline rooted at a seed. */
   reset(poly: Polyhedron, label: string, options: HistoryOptions): void {
     this.entries = [
-      { poly, label, name: null, invalid: false, isSeed: true, options: { ...options } },
+      { poly, label, name: null, displayName: null, op: null, invalid: false, isSeed: true, options: { ...options } },
     ];
     this.index = 0;
   }
 
   /** Append a new operation state after the current one, dropping any redo tail.
    *  Returns the index of the new (now current) entry. */
-  push(poly: Polyhedron, label: string, options: HistoryOptions): number {
+  push(poly: Polyhedron, label: string, options: HistoryOptions, op: OpDescriptor | null): number {
     this.entries.length = this.index + 1; // discard the redo tail
     this.entries.push({
-      poly, label, name: null, invalid: false, isSeed: false, options: { ...options },
+      poly, label, name: null, displayName: null, op, invalid: false, isSeed: false, options: { ...options },
     });
     this.index = this.entries.length - 1;
     return this.index;
@@ -68,6 +75,7 @@ export class History {
     if (e) {
       e.name = name;
       e.invalid = invalid;
+      e.displayName = composeName(this.entries, index);
     }
   }
 
