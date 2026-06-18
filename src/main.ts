@@ -256,15 +256,7 @@ window.addEventListener("keydown", (e) => {
     if (k === d.verticesKey) return void controller.selectStrategy("vertices");
   }
 
-  const enabled = config.seeds.enabled;
-  if (config.seeds.numberKeyToLoadSeed && /^[1-9]$/.test(e.key)) {
-    const idx = parseInt(e.key, 10) - 1;
-    if (idx < enabled.length) {
-      currentSeed = enabled[idx];
-      controller.load(seedPoly(currentSeed), seedLabel(currentSeed));
-      rig.frame(new Vector3());
-    }
-  } else if (e.key.toLowerCase() === config.seeds.resetKey) {
+  if (e.key.toLowerCase() === config.seeds.resetKey) {
     controller.load(seedPoly(currentSeed), seedLabel(currentSeed));
     rig.frame(new Vector3());
   }

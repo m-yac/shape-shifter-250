@@ -19,6 +19,79 @@ function plural(element: "vertex" | "face", n: number): string {
   return element === "vertex" ? "vertices" : "faces";
 }
 
+/** Per-vertex degree (incident-face count = edge count on a closed solid). */
+function vertexDegrees(poly: Polyhedron): number[] {
+  const deg = new Array<number>(poly.vertices.length).fill(0);
+  for (const f of poly.faces) for (const i of f) deg[i]++;
+  return deg;
+}
+
+/** Join a list so the final separator reads ", and " (e.g. "a, b, and c"; "a, and b"). */
+function joinAnd(parts: string[]): string {
+  if (parts.length <= 1) return parts[0] ?? "";
+  return parts.slice(0, -1).join(", ") + ", and " + parts[parts.length - 1];
+}
+
+/**
+ * Describe a homogeneous set of elements (a selection, or the participants of an
+ * in-progress operation) — where "arity" is a face's side count or a vertex's
+ * degree. When every element of the kind is included it reads simply "all faces"
+ * / "all vertices". Otherwise an arity all of whose elements are included reads as
+ * one group ("all 3-gon faces" / "all degree-4 vertices"); everything left over is
+ * summed into a trailing count. `ids === null` means the whole solid. Examples:
+ *   "all vertices"                  (every vertex)
+ *   "all degree-4 vertices"
+ *   "all 3-gon faces, all 5-gon faces, and 2 faces"
+ *   "all degree-3 vertices, and 1 vertex"
+ *   "2 faces"                       (no arity fully covered)
+ */
+function describeSet(
+  poly: Polyhedron,
+  ids: Set<number> | null,
+  kind: MarkerKind,
+): string {
+  const onFaces = kind === "face";
+  const elemCount = onFaces ? poly.faces.length : poly.vertices.length;
+  // The whole solid → just "all faces" / "all vertices".
+  if (ids === null || ids.size === elemCount) {
+    return `all ${plural(onFaces ? "face" : "vertex", 2)}`;
+  }
+
+  const degrees = onFaces ? null : vertexDegrees(poly);
+  const arityOf = (id: number): number =>
+    onFaces ? poly.faces[id].length : degrees![id];
+
+  // How many elements of each arity exist in the whole solid …
+  const total = new Map<number, number>();
+  for (let id = 0; id < elemCount; id++) {
+    const a = arityOf(id);
+    total.set(a, (total.get(a) ?? 0) + 1);
+  }
+  // … and how many are in the set.
+  const selected = new Map<number, number>();
+  for (const id of ids) {
+    const a = arityOf(id);
+    selected.set(a, (selected.get(a) ?? 0) + 1);
+  }
+
+  const fullGroups: string[] = [];
+  let remainder = 0;
+  for (const a of [...selected.keys()].sort((x, y) => x - y)) {
+    const n = selected.get(a)!;
+    if (n === total.get(a)) {
+      fullGroups.push(onFaces ? `all ${a}-gon faces` : `all degree-${a} vertices`);
+    } else {
+      remainder += n;
+    }
+  }
+
+  const parts = [...fullGroups];
+  if (remainder > 0) {
+    parts.push(`${remainder} ${plural(onFaces ? "face" : "vertex", remainder)}`);
+  }
+  return joinAnd(parts);
+}
+
 /** Whether two id sets hold exactly the same members. */
 function sameSet(a: Set<number>, b: Set<number>): boolean {
   if (a.size !== b.size) return false;
@@ -54,9 +127,16 @@ export class Readout {
   private signature: Signature | null = null;
   private selection: Set<number> = new Set();
   private selectionKind: MarkerKind | null = null;
-  // Non-null only while a drag is live; `count` is the participating subset size,
-  // or null when the operation affects every element of its kind (the whole solid).
-  private drag: { kind: OperationKind; weld: boolean; count: number | null, t: number } | null = null;
+  // Non-null only while a drag is live. `selIds` is the participating element set
+  // (null = every element of its kind / the whole solid); `selKind` is whether the
+  // operation acts on vertices or faces, so the readout can describe it by arity.
+  private drag: {
+    kind: OperationKind;
+    weld: boolean;
+    t: number;
+    selIds: Set<number> | null;
+    selKind: MarkerKind;
+  } | null = null;
   // private verified: boolean = false;
   private invalid: boolean = false;
   private solving: boolean = false;
@@ -191,19 +271,22 @@ export class Readout {
     this.polyBox.el.style.display = "";
 
     if (this.selectionEnabled && (this.drag || this.selection.size > 0)) {
+      // The affected set is summarized by arity group ("all 3-gon faces, and 2
+      // faces" / "all degree-4 vertices" / "all faces"). During a live operation
+      // drag the operation verb leads; otherwise it's a static "Selected …".
       let onFaces = this.selectionKind === "face";
-      let verb = "Selected";
-      let count = this.selection.size;
+      let line: string;
       if (this.drag) {
-        if (this.drag.t > config.interaction.minCommitT) {
-          onFaces = this.drag.kind === "kis" || this.drag.kind === "gyro";
-          verb = DRAG_VERB[this.drag.kind][this.drag.weld ? 1 : 0];
-        }
-        count =
-        this.drag.count ?? (onFaces ? this.poly.faces.length : this.poly.vertices.length);
+        onFaces = this.drag.selKind === "face";
+        const verb =
+          this.drag.t > config.interaction.minCommitT
+            ? DRAG_VERB[this.drag.kind][this.drag.weld ? 1 : 0]
+            : "Selected";
+        line = `${verb} ${describeSet(this.poly, this.drag.selIds, this.drag.selKind)}`;
+      } else {
+        line = `Selected ${describeSet(this.poly, this.selection, this.selectionKind ?? "face")}`;
       }
-      const noun = plural(onFaces ? "face" : "vertex", count);
-      this.selEl.textContent = `${verb} ${count} ${noun}\nSHIFT: `;
+      this.selEl.textContent = `${line}\nSHIFT: `;
 
       let snub = document.createElement("span");
       let gyro = document.createElement("span");
@@ -250,7 +333,15 @@ export class Readout {
   }
 
   /** Reflect an in-progress drag (or pass null when the drag ends). */
-  setDrag(drag: { kind: OperationKind; weld: boolean; count: number | null, t: number } | null): void {
+  setDrag(
+    drag: {
+      kind: OperationKind;
+      weld: boolean;
+      t: number;
+      selIds: Set<number> | null;
+      selKind: MarkerKind;
+    } | null,
+  ): void {
     this.drag = drag;
     this.show();
   }

@@ -48,6 +48,22 @@ export class Selection {
     }
   }
 
+  /** Replace the whole selection with `ids` of `kind` (an empty set / null kind
+   *  clears it). Used to select an entire arity group at once, and to restore a
+   *  snapshot when an aimless multi-drag commits nothing. */
+  replace(kind: MarkerKind | null, ids: Set<number>): void {
+    if (!kind || ids.size === 0) {
+      this.kind = null;
+      this.ids = new Set();
+    } else {
+      this.kind = kind;
+      this.ids = new Set(ids);
+    }
+    if (this.readout) {
+      this.readout.updateSelection(this.ids, this.kind);
+    }
+  }
+
   /** The active set for a drag of the given kind (null = "affect everything"). */
   setFor(kind: MarkerKind): Set<number> | null {
     if (this.kind === kind && this.ids.size > 0) return new Set(this.ids);

@@ -160,8 +160,9 @@ export const config = {
       "icosahedron",
     ],
     initial: "tetrahedron",
-    // Press these number keys (1..5) to load the corresponding enabled seed.
-    numberKeyToLoadSeed: true,
+    // Loading a seed by number key is disabled: the digit keys 3..9 are reserved
+    // for the arity-filtered selection modifier (see DragController).
+    numberKeyToLoadSeed: false,
     // Press R to reset to the current seed.
     resetKey: "r",
   },
