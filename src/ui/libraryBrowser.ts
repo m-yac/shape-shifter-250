@@ -86,6 +86,19 @@ export class LibraryBrowser {
   private snapTarget: Vector3 | null = null; // focus the pan-snap eases toward
   private raf = 0;
 
+  // EASTER EGG: typing `config.library.revealAllCode` while open lights the whole
+  // library until it's closed. `cheatBuffer` is a rolling tail of recent keys.
+  private revealAll = false;
+  private cheatBuffer = "";
+  private readonly onCheatKey = (e: KeyboardEvent): void => {
+    if (!this.open || e.key.length !== 1) return;
+    this.cheatBuffer = (this.cheatBuffer + e.key.toLowerCase()).slice(-16);
+    if (!this.revealAll && this.cheatBuffer.endsWith(config.library.revealAllCode)) {
+      this.revealAll = true;
+      this.refresh();
+    }
+  };
+
   constructor(
     private readonly screen: Screen,
     // The main view's camera, copied as the browse start position each open.
@@ -227,9 +240,18 @@ export class LibraryBrowser {
     return out;
   }
 
+  /** Every discoverable node index — the "discovered" set the reveal-all cheat uses. */
+  private allDiscoverableSet(): Set<number> {
+    const out = new Set<number>();
+    this.nodes.forEach((n, i) => {
+      if (n.discoverable) out.add(i);
+    });
+    return out;
+  }
+
   /** Retint every node (color / ghost / hidden) and rebuild the arrow set. */
   private refresh(): void {
-    const discovered = this.discoveredSet();
+    const discovered = this.revealAll ? this.allDiscoverableSet() : this.discoveredSet();
     const visible = computeVisible(this.graph, discovered);
     this.visibleSet = visible;
 
@@ -410,6 +432,10 @@ export class LibraryBrowser {
       this.built = true;
     }
     this.open = true;
+    // Reset the reveal-all cheat for each open.
+    this.revealAll = false;
+    this.cheatBuffer = "";
+    window.addEventListener("keydown", this.onCheatKey);
     this.canvas.style.display = "block";
     this.popup.el.style.display = "";
     this.relayout();
@@ -443,6 +469,8 @@ export class LibraryBrowser {
   close(): void {
     if (!this.open) return;
     this.open = false;
+    this.revealAll = false;
+    window.removeEventListener("keydown", this.onCheatKey);
     cancelAnimationFrame(this.raf);
     this.canvas.style.display = "none";
     this.popup.el.style.display = "none";

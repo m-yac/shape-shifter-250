@@ -3,7 +3,7 @@ import { config } from "../config";
 import { Screen, Popup, fadeIn } from "./screen";
 
 /** Width of the history panel, in character cells. */
-const HISTORY_COLS = 28;
+const HISTORY_COLS = config.ui.historyCols;
 
 /**
  * Right-side HISTORY panel: a box-drawing popup whose body lists the operations

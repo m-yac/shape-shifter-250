@@ -72,6 +72,14 @@ export const config = {
     // (un-projected) cursor distance drive the parameter instead.
     snapTruncateToEdge: true,
     snapKisToNormal: true,
+
+    // How far (in pixels) the pointer must move after pressing on a handle before
+    // the press becomes a drag rather than a click.
+    dragStartPixels: 4,
+
+    // When the welded max (rectify / join) is disabled, the drag stops just short
+    // of it (this t value) so coincident vertices / faces don't go degenerate.
+    maxTWithoutWeld: 0.94,
   },
 
   // ---------------------------------------------------------------------------
@@ -147,6 +155,23 @@ export const config = {
       targetAverageRadius: 1,
       rescaleRate: 1,
     },
+  },
+
+  // ---------------------------------------------------------------------------
+  // OPERATIONS — geometric constants for the snub / gyro drags.
+  // ---------------------------------------------------------------------------
+  operations: {
+    // Snub: the cut fraction along an edge that an "outer" (triangle-only) cut
+    // vertex reaches at full skew, and the smaller fraction the "inner" (n-gon)
+    // cut vertices reach. They sum to 1 so that at the welded max the outer cut
+    // vertex from one end of an edge exactly meets the inner cut vertex from the
+    // other end (e.g. snub of the octahedron → icosahedron).
+    snubOuterFraction: 0.65,
+    snubInnerFraction: 0.35,
+
+    // Gyro: how far a peripheral vertex slides from the face apex toward its edge
+    // midpoint at full skew (fraction of that center→edge line).
+    gyroSlide: 0.5,
   },
 
   // ---------------------------------------------------------------------------
@@ -318,6 +343,23 @@ export const config = {
       discovery: "WOW", //   new-shape popup (ui/discoveryPopup.ts)
     },
 
+    // Columns by which the wrapped (continuation) lines of a readout box
+    // hang-indent under their label (ui/readout.ts). Whole cells keep the indent
+    // on the character grid.
+    readoutIndentCols: 2,
+
+    // Initial / max width (columns) of the HISTORY panel (ui/historyPanel.ts).
+    historyCols: 28,
+
+    // The present-participle verb shown while a drag is in progress, keyed by the
+    // operation and whether the drag has reached its welded max end.
+    dragVerbs: {
+      truncate: ["Truncating", "Rectifying"],
+      kis: ["Kis-ing", "Joining"],
+      snub: ["Incompletely Snubbing", "Snubbing"],
+      gyro: ["Incompletely Gyro-ing", "Gyro-ing"],
+    } as Record<string, [unwelded: string, welded: string]>,
+
     // The OPTIONS panel. Line 1 shows the discovered-shape count; line 2 labels the
     // three regularization-strategy buttons. `regularLabel` precedes them; the
     // button captions map to the solver strategies vertices / edges / faces.
@@ -405,6 +447,9 @@ export const config = {
     // ("all white at 25%"); discovered ones use their full default colors.
     ghostColor: 0x8b94a3,
     ghostOpacity: 0.125,
+    // EASTER EGG: type this word while the browser is open to reveal the ENTIRE
+    // library (every solid lit in full color) until the window is closed.
+    revealAllCode: "xyzzy",
     diagram: [
       // Tetrahedron family
       [  0,  6,  0, "Icosahedron", ["d3l4", "d3r4"] ],

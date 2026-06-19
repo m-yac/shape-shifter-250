@@ -16,14 +16,15 @@ import { type InViewTest } from "./truncate";
 import { weldVertexPairs } from "./weld";
 import { lerpFaceColors, vertexMax, vertexMaxPlus1 } from "./colorUtil";
 import { closestLineParam, distancePointToRay } from "../util/lines";
+import { config } from "../config";
 
 // Cut fraction along an edge that an "outer" (triangle-only) cut vertex reaches at
 // t=1, and the smaller fraction the "inner" (n-gon) cut vertices reach. The gap is
 // what skews the truncated 2n-gon into the snub form. They sum to 1 so that at t=1
 // the outer cut vertex from one end of an edge exactly meets the inner cut vertex
 // from the other end — the welded max (e.g. snub of the octahedron → icosahedron).
-const F_OUT = 0.65;
-const F_IN = 0.35;
+const F_OUT = config.operations.snubOuterFraction;
+const F_IN = config.operations.snubInnerFraction;
 
 /** Are the snubbed vertices connected through edges that join two snubbed vertices?
  *  Required so the chirality below has a single coherent twist (one connected patch,

@@ -17,6 +17,7 @@ import { type InViewTest } from "./truncate";
 import { joinHeight } from "./kis";
 import { faceMax, faceMaxPlus1, lerpFaceColors } from "./colorUtil";
 import { closestLineParam, distancePointToRay } from "../util/lines";
+import { config } from "../config";
 
 // How far (as a fraction of the centre → edge-midpoint line) the peripheral
 // vertices slide at full skew. Kept well short of the midpoint so they stay lifted
@@ -24,7 +25,7 @@ import { closestLineParam, distancePointToRay } from "../util/lines";
 // good, non-degenerate starting cap. The exact merged-face planarity is left to the
 // post-release solver — the regular target (e.g. the dodecahedron's vertices) does
 // not lie on these lines, so there is no closed-form "coplanar" distance to hit.
-const GYRO_SLIDE = 0.5;
+const GYRO_SLIDE = config.operations.gyroSlide;
 
 /** Half-edges around a face, in order. */
 function faceHalfEdges(f: HEFace): HalfEdge[] {

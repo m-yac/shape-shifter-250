@@ -11,7 +11,7 @@ import { Screen, Popup, fadeIn } from "./screen";
 // A long faces/vertices configuration list that overflows the screen wraps and
 // the continuation lines sit indented under their label. Whole cells keep the
 // indent on the character grid (see setupWrap below).
-const READOUT_INDENT_COLS = 2;
+const READOUT_INDENT_COLS = config.ui.readoutIndentCols;
 
 /** "vertex"/"vertices" or "face"/"faces" agreeing with `n`. */
 function plural(element: "vertex" | "face", n: number): string {
@@ -104,12 +104,10 @@ function sameSet(a: Set<number>, b: Set<number>): boolean {
  * operation and whether the drag has reached its welded max end (for snub, that's
  * the fully-extended skew; for gyro it's inherited from the base level).
  */
-const DRAG_VERB: Record<OperationKind, [unwelded: string, welded: string]> = {
-  truncate: ["Truncating", "Rectifying"],
-  kis: ["Kis-ing", "Joining"],
-  snub: ["Incompletely Snubbing", "Snubbing"],
-  gyro: ["Incompletely Gyro-ing", "Gyro-ing"],
-};
+const DRAG_VERB = config.ui.dragVerbs as Record<
+  OperationKind,
+  [unwelded: string, welded: string]
+>;
 
 /**
  * Minimal bottom-left text overlay: the polyhedron's name, a ✓ when verified by

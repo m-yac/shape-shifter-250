@@ -35,7 +35,7 @@ import { solidTypeFor } from "../data/namedPolyhedra";
 import { config } from "../config";
 import { led } from "../ui/led";
 
-const DRAG_START_PIXELS = 4;
+const DRAG_START_PIXELS = config.interaction.dragStartPixels;
 const IS_MAC = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent);
 
 /** Whether two id sets hold exactly the same members. */
@@ -47,7 +47,7 @@ function sameIdSet(a: Set<number>, b: Set<number>): boolean {
 
 // When the welded max (rectify / join) is disabled, stop the drag just short of
 // it so coincident vertices / faces don't produce degenerate geometry.
-const MAX_T_WITHOUT_WELD = 0.94;
+const MAX_T_WITHOUT_WELD = config.interaction.maxTWithoutWeld;
 
 interface Pending {
   marker: Marker | null;
@@ -466,6 +466,20 @@ export class DragController {
       return;
     }
     if (this.mode !== "idle" || !config.features.multiSelect) return;
+
+    // Option+A selects EVERY handle of the hovered kind (like Option, but every
+    // arity at once). Uses e.code so it survives Option remapping the character.
+    if (e.type === "keydown" && e.altKey && e.code === "KeyA" && this.hover) {
+      e.preventDefault();
+      const kind = this.hover.kind;
+      const markers = kind === "vertex" ? this.view.vertexMarkers : this.view.faceMarkers;
+      const ids = new Set<number>();
+      for (const m of markers) ids.add(m.id);
+      this.selection.addAll(kind, ids);
+      this.altHeld = true;
+      this.refreshHighlights();
+      return;
+    }
 
     // Cmd/Ctrl or Option/Alt pressed/released while hovering re-tints the preview
     // (Alt switches between the single handle and its whole arity group).
