@@ -10,6 +10,26 @@ const LIBRARY_KEY = "libraryLine";
 const REGULAR_KEY = "regularLine";
 const COLORS_KEY = "colorsLine";
 
+type RGB = [number, number, number];
+
+/** Parse a `#rgb` / `#rrggbb` string to an [r,g,b] triple (0..255). */
+function parseHex(hex: string): RGB {
+  const h = hex.trim().replace("#", "");
+  const s = h.length === 3 ? h.replace(/./g, (c) => c + c) : h;
+  const n = parseInt(s || "ffffff", 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function lerpRGB(a: RGB, b: RGB, k: number): RGB {
+  return [
+    Math.round(a[0] + (b[0] - a[0]) * k),
+    Math.round(a[1] + (b[1] - a[1]) * k),
+    Math.round(a[2] + (b[2] - a[2]) * k),
+  ];
+}
+
+const rgbCss = ([r, g, b]: RGB): string => `rgb(${r}, ${g}, ${b})`;
+
 /**
  * Top-left OPTIONS panel: a small box-drawing popup pinned to the top-left
  * corner. Its lines come from `config.ui.optionsPanel`:
@@ -25,6 +45,11 @@ export class ShapesPanel {
   private readonly radios: Record<string, RadioGroup> = {};
   private visible = false;
   private count = 0;
+  // Shapes discovered since the browser was last opened, shown as "Browse (N new)".
+  private newCount = 0;
+  private browseBtn: HTMLElement | null = null;
+  private flashRaf = 0;
+  private flashHovered = false;
   private strategy: Strategy = config.solver.defaultStrategy;
   private colorScheme: string = config.render.defaultColorScheme;
   private solving = false;
@@ -64,6 +89,19 @@ export class ShapesPanel {
         const entries = Object.entries(line.buttons);
         entries.forEach(([btnKey, caption], i) => {
           const btn = makeActionButton(caption, () => this.onButton(key, btnKey));
+          if (key === LIBRARY_KEY && btnKey === "browse") {
+            this.browseBtn = btn.el;
+            // Hovering cancels the "new shape" flash and pins the hover color (the
+            // CSS :hover rule takes over once our inline color is cleared).
+            btn.el.addEventListener("mouseenter", () => {
+              this.flashHovered = true;
+              cancelAnimationFrame(this.flashRaf);
+              this.clearFlashStyle();
+            });
+            btn.el.addEventListener("mouseleave", () => {
+              this.flashHovered = false;
+            });
+          }
           row.append(btn.el);
           if (i < entries.length - 1) row.append(document.createTextNode(" "));
         });
@@ -112,7 +150,66 @@ export class ShapesPanel {
   }
 
   private onButton(lineKey: string, btnKey: string): void {
-    if (lineKey === LIBRARY_KEY && btnKey === "browse") this.onBrowse();
+    if (lineKey === LIBRARY_KEY && btnKey === "browse") {
+      // Opening the browser clears the "(N new)" badge.
+      if (this.newCount !== 0) {
+        this.newCount = 0;
+        this.updateBrowseLabel();
+      }
+      this.onBrowse();
+    }
+  }
+
+  /** Note that a new shape was discovered: bump the "(N new)" badge and flash the
+   *  Browse button to its hover color, decaying back to normal. */
+  markNew(): void {
+    this.newCount++;
+    this.updateBrowseLabel();
+    this.startFlash();
+  }
+
+  /** Re-caption the Browse button as "Browse" or "Browse (N new)" and re-fit. */
+  private updateBrowseLabel(): void {
+    if (!this.browseBtn) return;
+    const base = config.ui.optionsPanel.libraryLine.buttons.browse;
+    const label = this.newCount > 0 ? `${base} (${this.newCount} new)` : base;
+    this.browseBtn.textContent = `[${label}]`;
+    this.render();
+  }
+
+  private clearFlashStyle(): void {
+    if (!this.browseBtn) return;
+    this.browseBtn.style.color = "";
+    this.browseBtn.style.textShadow = "";
+  }
+
+  /** Flash the Browse button to the hover color, then ease back to normal over
+   *  `newFlashSeconds`. Hovering cancels it (see the mouseenter handler). */
+  private startFlash(): void {
+    const el = this.browseBtn;
+    if (!el) return;
+    cancelAnimationFrame(this.flashRaf);
+    if (this.flashHovered) return; // hover already shows the accent
+    const cs = getComputedStyle(document.documentElement);
+    const select = parseHex(cs.getPropertyValue("--select") || "#5ad7ff");
+    const text = parseHex(cs.getPropertyValue("--text") || "#ffffff");
+    const glowSelect = cs.getPropertyValue("--glow-select").trim();
+    const durMs = Math.max(1, config.ui.optionsPanel.libraryLine.newFlashSeconds * 1000);
+    const start = performance.now();
+    const step = (now: number): void => {
+      if (this.flashHovered) {
+        this.clearFlashStyle();
+        return;
+      }
+      const k = Math.min(1, (now - start) / durMs);
+      el.style.color = rgbCss(lerpRGB(select, text, k));
+      el.style.textShadow = k < 1 ? glowSelect : "";
+      if (k < 1) this.flashRaf = requestAnimationFrame(step);
+      else this.clearFlashStyle();
+    };
+    el.style.color = rgbCss(select);
+    el.style.textShadow = glowSelect;
+    this.flashRaf = requestAnimationFrame(step);
   }
 
   /** Wire the strategy press / release handlers. Press switches strategy and

@@ -370,8 +370,13 @@ export const config = {
     optionsPanel: {
       libraryLine: {
         label: "Library",
-        text: "{count}/{total} shapes",
+        text: "{count}/{total}",
         buttons: { browse: "Browse" },
+        // When new shapes have been discovered since the browser was last opened,
+        // the button reads "Browse (N new)". Each discovery flashes it to the hover
+        // color, then decays back to normal over this many seconds (hovering cancels
+        // the decay and pins the hover color). The "(N new)" resets when opened.
+        newFlashSeconds: 1.2,
       },
       regularLine: {
         label: "Regular",

@@ -949,6 +949,7 @@ export class DragController {
     if (discover && !this.invalid && name) {
       const { isNew, first } = this.discoveries.add(name);
       this.shapes.setCount(this.discoveries.count);
+      if (isNew) this.shapes.markNew();
       if (config.discovery.enabled && isNew) this.celebrate(name, first);
     }
     // Record the result against the current history entry (invalid states show no
