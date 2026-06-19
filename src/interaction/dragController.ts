@@ -52,7 +52,8 @@ const MAX_T_WITHOUT_WELD = 0.94;
 interface Pending {
   marker: Marker | null;
   shift: boolean;
-  multi: boolean;
+  alt: boolean; // Option: additive-arity selection
+  cmd: boolean; // Cmd/Ctrl: single element (or additive individual, per config)
   x: number;
   y: number;
 }
@@ -118,17 +119,11 @@ export class DragController {
   private hover: Marker | null = null;
   private hoverInRange = false;
   private hoverRay: Ray | null = null;
-  private hoverMulti = false; // Cmd/Ctrl (or an arity digit) held while hovering (would drag as a selection)
-  // While a digit 3–9 is held, only handles of that arity (a face's side count /
-  // a vertex's degree) are hoverable/clickable, and the digit acts like Cmd/Ctrl
-  // for selection. null when no digit is held.
-  private arityKey: number | null = null;
-  // Option/Alt held: a "same arity as whatever I'm hovering" gesture (an implicit,
-  // uncapped arity digit). Unlike a digit it doesn't restrict what's hoverable.
+  private hoverMulti = false; // Cmd/Ctrl held while hovering (would drag a single element)
+  // Option/Alt held: a "same arity as whatever I'm hovering" gesture — hovering
+  // highlights the hovered handle's whole arity group, and a click ADDS that group
+  // to the current selection (building selections spanning several arities).
   private altHeld = false;
-  // Last idle pointer position, so toggling an arity gesture can re-pick the
-  // hovered handle under a stationary cursor.
-  private lastPointer: { x: number; y: number } | null = null;
   // Memoized per-vertex degree (incident-face count) for the current polyhedron,
   // rebuilt only when `this.current` changes.
   private degCache: { poly: Polyhedron; deg: number[] } | null = null;
@@ -457,27 +452,6 @@ export class DragController {
   }
 
   private onKeyDown(e: KeyboardEvent): void {
-    // Arity digit (3–9): while held it restricts hovering/clicking to handles of
-    // that arity AND acts as a selection modifier (like Cmd/Ctrl). Tracked ahead of
-    // everything else (and regardless of mode) so releasing it mid-drag can't leave
-    // the filter stuck on after the drag ends. Auto-repeat keydowns are idempotent.
-    if (config.features.multiSelect && e.key.length === 1 && e.key >= "3" && e.key <= "9") {
-      const digit = Number(e.key);
-      const next =
-        e.type === "keydown" ? digit : this.arityKey === digit ? null : this.arityKey;
-      if (next !== this.arityKey) {
-        this.arityKey = next;
-        if (this.mode === "idle") {
-          // The pickable set changed: re-pick under the (stationary) cursor so the
-          // highlight updates without needing a mouse move.
-          if (this.lastPointer) this.updateHover(this.lastPointer.x, this.lastPointer.y);
-          this.hoverMulti = this.multiHeld(e);
-          this.refreshHighlights();
-        }
-      }
-      return;
-    }
-
     // Shift held/released DURING a drag morphs truncate↔snub / kis↔gyro live.
     if (this.mode === "dragging" && this.drag) {
       if (e.key == 'Escape') {
@@ -524,15 +498,8 @@ export class DragController {
       : this.vertexDegrees()[m.id];
   }
 
-  /** The markers a pick may target right now: all of them, or — while a digit is
-   *  held — only those whose arity matches it. */
-  private pickable(): Marker[] {
-    if (this.arityKey == null) return this.allMarkers();
-    return this.allMarkers().filter((m) => this.arityOf(m) === this.arityKey);
-  }
-
-  /** Every marker id of `kind` with the given arity — the set an arity gesture
-   *  selects. */
+  /** Every marker id of `kind` with the given arity — the group a default drag
+   *  affects, and the group an Option gesture selects. */
   private arityGroup(kind: MarkerKind, arity: number): Set<number> {
     const markers = kind === "vertex" ? this.view.vertexMarkers : this.view.faceMarkers;
     const ids = new Set<number>();
@@ -541,24 +508,23 @@ export class DragController {
   }
 
   /**
-   * The arity an active arity gesture targets for marker `m`, or null when no such
-   * gesture is held. A digit 3–9 pins an explicit arity (and `m` already matches
-   * it); Option/Alt instead takes the marker's OWN arity, so you select every
-   * handle sharing the hovered one's arity without naming the number.
+   * The arity an active Option gesture targets for marker `m`, or null when Option
+   * isn't held: Option takes the marker's OWN arity, so hovering highlights — and a
+   * click adds — every handle sharing the hovered one's arity.
    */
   private gestureArity(m: Marker): number | null {
-    if (this.arityKey != null) return this.arityKey;
-    if (this.altHeld) return this.arityOf(m);
-    return null;
+    return this.altHeld ? this.arityOf(m) : null;
   }
 
-  /** Whether selection ("multi") is active: Cmd/Ctrl, Option/Alt, or an arity digit
-   *  held — gated by the multiSelect feature. */
+  /** Cmd/Ctrl held (the "command" modifier), gated by the multiSelect feature. */
+  private cmdHeld(e: { metaKey: boolean; ctrlKey: boolean }): boolean {
+    return (IS_MAC ? e.metaKey : e.ctrlKey) && config.features.multiSelect;
+  }
+
+  /** Whether a selection modifier (Cmd/Ctrl or Option) is active — gated by the
+   *  multiSelect feature. */
   private multiHeld(e: { metaKey: boolean; ctrlKey: boolean; altKey: boolean }): boolean {
-    return (
-      ((IS_MAC ? e.metaKey : e.ctrlKey) || e.altKey || this.arityKey != null) &&
-      config.features.multiSelect
-    );
+    return (this.cmdHeld(e) || e.altKey) && config.features.multiSelect;
   }
 
   /**
@@ -574,7 +540,7 @@ export class DragController {
     if (this.solver) return; // not interactable while relaxing (orbit still works)
     this.altHeld = e.altKey && config.features.multiSelect;
     const marker = this.picker.pick(
-      this.pickable(),
+      this.allMarkers(),
       e.clientX,
       e.clientY,
       this.canvas,
@@ -583,7 +549,8 @@ export class DragController {
     this.pending = {
       marker,
       shift: e.shiftKey,
-      multi: this.multiHeld(e),
+      alt: this.altHeld,
+      cmd: this.cmdHeld(e),
       x: e.clientX,
       y: e.clientY,
     };
@@ -594,7 +561,6 @@ export class DragController {
 
   private onMove(e: PointerEvent): void {
     if (this.mode === "idle") {
-      this.lastPointer = { x: e.clientX, y: e.clientY };
       this.altHeld = e.altKey && config.features.multiSelect;
       this.hoverMulti = this.multiHeld(e);
       this.updateHover(e.clientX, e.clientY);
@@ -618,7 +584,7 @@ export class DragController {
     // mid-flight), so suppress hover entirely.
     if (config.features.hoverHighlight && !this.solver) {
       const hit = this.picker.pickClosest(
-        this.pickable(),
+        this.allMarkers(),
         x,
         y,
         this.canvas,
@@ -717,30 +683,46 @@ export class DragController {
     const kind = p.marker.kind;
     const id = p.marker.id;
 
-    // A multi-drag (Cmd/Ctrl or an arity digit) temporarily folds handles into the
-    // selection and drags the whole set — but TEMPORARILY: if the drag commits
-    // nothing, the prior selection is restored on release (see onUp), so an aimless
-    // multi-drag doesn't leave anything selected. Snapshot it now to restore later.
-    const restore: SelectionSnapshot | null = p.multi
-      ? { kind: this.selection.kind, ids: new Set(this.selection.ids) }
-      : null;
+    // A modifier drag (Option / Cmd-Ctrl) may temporarily fold handles into the
+    // selection and drag the whole set — but TEMPORARILY: if the drag commits nothing,
+    // the prior selection is restored on release (see onUp), so an aimless modifier-drag
+    // doesn't leave anything selected. Snapshot it now to restore later.
+    const restore: SelectionSnapshot | null =
+      p.alt || p.cmd ? { kind: this.selection.kind, ids: new Set(this.selection.ids) } : null;
 
-    // Decide the participating selection set (or null = affect everything).
-    let sel: Set<number> | null = null;
-    const arity = p.multi ? this.gestureArity(p.marker) : null;
-    if (arity != null) {
-      // Arity drag: operate on EVERY handle of this kind with the gesture's arity,
-      // and select them all for the duration.
-      const group = this.arityGroup(kind, arity);
-      this.selection.replace(kind, group);
-      sel = new Set(group);
+    // Decide the participating selection set. The default (no modifier) drag affects
+    // the dragged handle's whole ARITY group (degree-n vertices / n-gon faces).
+    let sel: Set<number> | null;
+    let persistent = false; // whether a lasting selection should survive this drag
+    if (p.alt) {
+      // Option: add the hovered handle's arity group to the selection and drag the
+      // whole (possibly multi-arity) selection.
+      this.selection.addAll(kind, this.arityGroup(kind, this.arityOf(p.marker)));
+      sel = this.selection.setFor(kind);
+      persistent = true;
+    } else if (p.cmd && config.features.commandAddsToSelection) {
+      // Command (additive mode): fold just this handle into the selection.
+      this.selection.add(kind, id);
+      sel = this.selection.setFor(kind);
+      persistent = true;
+    } else if (p.cmd) {
+      // Command (default): operate on this single handle only, clearing any selection.
+      this.selection.clear();
+      sel = new Set([id]);
+    } else if (this.selection.kind === kind && this.selection.ids.has(id)) {
+      // No modifier, but dragging a member of an existing (Option-built) selection →
+      // operate on the whole selection.
+      sel = this.selection.setFor(kind);
+      persistent = true;
     } else {
-      if (p.multi) this.selection.add(kind, id); // Cmd-drag adds just this handle
-      if (this.selection.kind === kind && this.selection.ids.size > 0) {
-        if (this.selection.ids.has(id)) sel = this.selection.setFor(kind);
-        else this.selection.clear(); // dragging an unselected handle drops the selection
-      }
+      // No modifier: default to the dragged handle's arity group; drop any selection.
+      this.selection.clear();
+      sel = this.arityGroup(kind, this.arityOf(p.marker));
     }
+    // A group covering every element of its kind is equivalent to "the whole solid"
+    // (null) — keep that path so uniform solids behave exactly as before.
+    const total = kind === "face" ? this.current.faces.length : this.current.vertices.length;
+    if (sel && sel.size === total) sel = null;
 
     // Build the base operation (truncate / kis). The Shift form (snub / gyro) is built
     // lazily when Shift goes down, so it can freeze the base's level at that instant.
@@ -757,7 +739,7 @@ export class DragController {
       base, sel,
       shift: null, shiftHeld: false, frozenWeld: false, lastRay: null,
       kind, id,
-      hasSelection: sel !== null,
+      hasSelection: persistent,
       selCount: sel ? sel.size : null,
       restore,
       t: 0, weld: false,
@@ -845,16 +827,15 @@ export class DragController {
         const active = this.activeSlot(this.drag);
         const { mesh, colors: finalColors } = active.plan.commit(this.drag.t, this.drag.weld);
         // `this.current` is still the pre-operation shape here (committed below), so
-        // the label / op descriptor classify against the geometry that was acted on.
-        const label = operationLabel(
-          active.plan.kind,
-          this.drag.weld,
-          this.current,
-          this.drag.sel,
-          this.drag.kind,
-        );
-        const { category, n } = classifySelection(this.current, this.drag.sel, this.drag.kind);
-        const op: OpDescriptor = { kind: active.plan.kind, weld: this.drag.weld, category, n };
+        // the op descriptor classifies against the geometry that was acted on. The
+        // chirality (snub / gyro only) distinguishes the two committed enantiomorphs.
+        const op: OpDescriptor = {
+          kind: active.plan.kind,
+          weld: this.drag.weld,
+          sel: classifySelection(this.current, this.drag.sel, this.drag.kind),
+          chirality: active.plan.chirality?.(),
+        };
+        const label = operationLabel(op);
         // Colors at release: the welded form's committed colors are taken as-is
         // (any difference from the drag's t=1 look snaps instantly); a partial
         // (un-welded) commit fades from the interpolated drag colors.
@@ -883,22 +864,24 @@ export class DragController {
       }
     } else if (this.mode === "pending" && this.pending) {
       // a click (no drag): selection bookkeeping
-      if (this.pending.multi) {
-        const arity = this.pending.marker ? this.gestureArity(this.pending.marker) : null;
-        if (!this.pending.marker) {
+      const p = this.pending;
+      if (!p.marker) {
+        this.selection.clear(); // click on empty space clears
+      } else if (p.alt) {
+        // Option click: ADD the clicked handle's whole arity group to the selection —
+        // or, if that exact group already IS the selection, toggle it back off.
+        const k = p.marker.kind;
+        const group = this.arityGroup(k, this.arityOf(p.marker));
+        if (this.selection.kind === k && sameIdSet(this.selection.ids, group))
           this.selection.clear();
-        } else if (arity != null) {
-          // Arity click: toggle the WHOLE arity group of the clicked kind — select
-          // them all, or clear if that exact group is already the selection.
-          const k = this.pending.marker.kind;
-          const group = this.arityGroup(k, arity);
-          if (this.selection.kind === k && sameIdSet(this.selection.ids, group))
-            this.selection.clear();
-          else this.selection.replace(k, group);
-        } else {
-          this.selection.toggle(this.pending.marker.kind, this.pending.marker.id);
-        }
+        else this.selection.addAll(k, group);
+      } else if (p.cmd && config.features.commandAddsToSelection) {
+        this.selection.toggle(p.marker.kind, p.marker.id); // additive: toggle one
       } else {
+        // A plain click — or a Command click in single-element (default) mode —
+        // clears the selection rather than selecting one handle, so it never looks
+        // like you can build a multi-selection by clicking. (Command still acts on a
+        // single element when DRAGGED.)
         this.selection.clear();
       }
     }
@@ -963,7 +946,6 @@ export class DragController {
     const display = this.history.list[this.history.current]?.displayName ?? name;
     this.readout.setPoly({
       poly, name: display, signature,
-      invalid: this.invalid,
       solving: false,
     });
     if (config.features.logToConsole) {
@@ -1027,15 +1009,20 @@ export class DragController {
 
     const hovering = !!this.hover && config.features.hoverHighlight;
 
-    // Arity gesture: hovering a handle in range previews the WHOLE arity group of
-    // that kind (every matching handle lights up, and a click/drag takes them all).
+    // Option gesture: hovering a handle in range previews its WHOLE arity group
+    // (every matching handle lights up, and a click/drag ADDS them to the selection).
     const arity = hovering ? this.gestureArity(this.hover!) : null;
     if (arity != null && this.hoverInRange) {
-      const group = this.arityGroup(this.hover!.kind, arity);
-      for (const id of group)
-        this.view.showMarker(this.hover!.kind, id, "selected");
-      if (this.mode === "idle" && !this.solver)
-        this.readout.updateSelection(group, this.hover!.kind);
+      const k = this.hover!.kind;
+      const group = this.arityGroup(k, arity);
+      for (const id of group) this.view.showMarker(k, id, "selected");
+      if (this.mode === "idle" && !this.solver) {
+        // The readout shows what a click would yield: the existing same-kind
+        // selection unioned with the hovered group.
+        const union = new Set(group);
+        if (this.selection.kind === k) for (const id of this.selection.ids) union.add(id);
+        this.readout.updateSelection(union, k);
+      }
       return;
     }
 

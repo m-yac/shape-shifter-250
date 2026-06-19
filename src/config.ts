@@ -29,6 +29,12 @@ export const config = {
     },
 
     multiSelect: true, // Cmd (macOS) / Ctrl: select several elements before dragging
+    // When false (default), Command/Ctrl operates on a SINGLE element (clearing any
+    // selection). When true, Command/Ctrl instead toggles individual elements into the
+    // current selection, so you can build arbitrary multi-figure subsets. (The shape
+    // NAMES are guaranteed a well-defined surjection onto makeable shapes only with this
+    // off — see operations/naming.ts.)
+    commandAddsToSelection: false,
     hoverHighlight: true, // highlight draggable vertices / face-centers under the mouse
     identification: true, // identify & name the current polyhedron after each edit
     isomorphismCheck: true, // background graph-isomorphism verification (the ✓ mark)
@@ -70,8 +76,9 @@ export const config = {
 
   // ---------------------------------------------------------------------------
   // SOLVER — the relaxation that runs after you release the mouse.
-  //   Stage 1 makes every face planar. If it cannot, the shape is "invalid".
-  //   Stage 2 (only if planar) nudges faces toward regular polygons.
+  //   Stage 1 makes every face planar. Stage 2 nudges faces toward regular
+  //   polygons. If faces won't flatten, the canonical step just keeps trying
+  //   (the SHAPE panel notes it after a few seconds) — nothing is "invalid".
   // ---------------------------------------------------------------------------
   solver: {
     enabled: true,
@@ -140,9 +147,6 @@ export const config = {
       targetAverageRadius: 1,
       rescaleRate: 1,
     },
-
-    // If planarization runs out of iterations/time, mark the polyhedron invalid.
-    invalidOnTimeout: true,
   },
 
   // ---------------------------------------------------------------------------
@@ -167,8 +171,8 @@ export const config = {
       "icosahedron",
     ],
     initial: "tetrahedron",
-    // Loading a seed by number key is disabled: the digit keys 3..9 are reserved
-    // for the arity-filtered selection modifier (see DragController).
+    // Loading a seed by number key is disabled. (Digit keys no longer affect
+    // selection either — operations default to the dragged element's arity group.)
     numberKeyToLoadSeed: false,
     // Press R to reset to the current seed.
     resetKey: "r",
@@ -354,68 +358,24 @@ export const config = {
       ],
     },
 
-    // OPERATION TEXT — keyed `operation → weld → category → [label, name]`.
-    //   • label — the action shown in the HISTORY panel rows ("Rectify", "3-Truncate").
-    //   • name  — the modifier prepended to the most recent named ancestor to derive a
-    //             name for an otherwise-unidentified shape (e.g. "Augmented Truncated Cube"),
-    //             shown in the bottom-left box and exported filenames.
+    // OPERATION TEXT — keyed `operation → weld → [label, name]`, the BASE verb pair:
+    //   • label — the action verb shown in the HISTORY rows ("Truncate", "Rectify", "Kis").
+    //   • name  — the modifier prepended to the nearest named ancestor to derive a shape
+    //             name (e.g. "Truncated Cube"), shown in the readout and exported filenames.
     // `weld` is the unwelded vs welded (rectify / join, full snub / gyro) end of the drag.
-    // The category reflects which elements the operation acted on:
-    //   whole  — the whole solid (every vertex/face of its kind);
-    //   arity  — all and only the elements of a single arity (degree-n vertices /
-    //            n-gon faces) — here `{n}` is that arity;
-    //   subset — any other strict subset — here `{n}` is the number of elements.
-    // `{noun}` becomes vertex/vertices or face/faces agreeing with `{n}`; in a name's
-    // "{n}-" prefix a single element drops the count ("Augmented", not "1-Augmented").
+    // operations/naming.ts adds the selection qualifier programmatically:
+    //   whole  → the bare verb;
+    //   arity  → an "a,b-" prefix listing the affected arities (degree-n vertices / n-gon
+    //            faces), e.g. "2,3-Truncated";
+    //   subset → a per-figure "count×figure" breakdown — short & parenthesized for the
+    //            name ("Truncated (1×4)", "Truncated (2×(3.6²))"), verbose for the label
+    //            ("Truncate 1× degree-3 vertex", "Kis 1×(4.5³)").
+    // Snub/gyro additionally get a " (R)"/" (L)" chirality suffix.
     operationLabels: {
-      truncate: {
-        unwelded: {
-          whole:  ["Truncate", "Truncated"],
-          arity:  ["{n}-Truncate", "{n}-Truncated"],
-          subset: ["Truncate {n} {noun}", "Partially Truncated"],
-        },
-        welded: {
-          whole:  ["Rectify", "Rectified"],
-          arity:  ["{n}-Truncate/Rectify", "{n}-Truncated/Rectified"],
-          subset: ["Truncate/Rectify {n} {noun}", "Partially Truncated/Rectified"],
-        },
-      },
-      kis: {
-        unwelded: {
-          whole:  ["Kis", "Kis"],
-          arity:  ["{n}-Kis", "{n}-Kis"],
-          subset: ["Kis {n} {noun}", "{n}-Augmented"],
-        },
-        welded: {
-          whole:  ["Join", "Joined"],
-          arity:  ["{n}-Kis/Join", "{n}-Kis/Joined"],
-          subset: ["Kis/Join {n} {noun}", "{n}-Augmented / Partially Joined"],
-        },
-      },
-      snub: {
-        unwelded: {
-          whole:  ["Incompletely Snub", "Incomplete Snub"],
-          arity:  ["Incompletely {n}-Snub", "Incomplete {n}-Snub"],
-          subset: ["Incompletely Snub {n} {noun}", "Partial Incomplete Snub"],
-        },
-        welded: {
-          whole:  ["Snub", "Snub"],
-          arity:  ["{n}-Snub", "{n}-Snub"],
-          subset: ["Snub {n} {noun}", "Partial Snub"],
-        },
-      },
-      gyro: {
-        unwelded: {
-          whole:  ["Incompletely Gyro", "Incomplete Gyro"],
-          arity:  ["Incompletely {n}-Gyro", "Incomplete {n}-Gyro"],
-          subset: ["Incompletely Gyro {n} {noun}", "Incomplete Partial Gyro"],
-        },
-        welded: {
-          whole:  ["Gyro", "Gyro"],
-          arity:  ["{n}-Gyro", "{n}-Gyro"],
-          subset: ["Gyro {n} {noun}", "Partial Gyro"],
-        },
-      },
+      truncate: { unwelded: ["Truncate", "Truncated"], welded: ["Rectify", "Rectified"] },
+      kis:      { unwelded: ["Kis", "Kis"], welded: ["Join", "Joined"] },
+      snub:     { unwelded: ["Incompletely Snub", "Incomplete Snub"], welded: ["Snub", "Snub"] },
+      gyro:     { unwelded: ["Incompletely Gyro", "Incomplete Gyro"], welded: ["Gyro", "Gyro"] },
     },
   },
 
@@ -458,8 +418,8 @@ export const config = {
       [ -2,  2,  0, "Triakis Octahedron", ["d2l2^"] ],
       [  2,  2,  0, "Truncated Octahedron", ["d2r2^"] ],
       [ -6,  0,  0, "Pentagonal Icositetrahedron", [] ],
-      [ -4,  0,  0, "Rhombic Dodecahedron", ["f4r4^, b2r2", "l2:^"] ],
-      [  4,  0,  0, "Cuboctahedron", ["b4l4^, f2l2", "r2:^"] ],
+      [ -4,  0,  0, "Rhombic Dodecahedron", ["f2r2d1", "f2r2u1", "b2r2", "l2:^"] ],
+      [  4,  0,  0, "Cuboctahedron", ["b2l2d1", "b2l2u1", "f2l2", "r2:^"] ],
       [  6,  0,  0, "Snub Cuboctahedron", [] ],
       [ -2, -2,  0, "Tetrakis Hexahedron", ["u2l2^"] ],
       [  2, -2,  0, "Truncated Cube", ["u2r2^"] ],
@@ -467,21 +427,29 @@ export const config = {
       [ -4,  3,  0, "Triakis Icosahedron", ["d3l4^"] ],
       [  4,  3,  0, "Truncated Icosahedron", ["d3r4^"] ],
       [-10,  0,  0, "Pentagonal Hexecontahedron", [] ],
-      [ -8,  0,  0, "Rhombic Triacontahedron", ["f8r8^, b4r4", "l2:^"] ],
-      [  8,  0,  0, "Icosidodecahedron", ["b8l8^, f4l4", "r2:^"] ],
+      [ -8,  0,  0, "Rhombic Triacontahedron", ["f4r4d1", "f4r4u1", "b4r4", "l2:^"] ],
+      [  8,  0,  0, "Icosidodecahedron", ["b4l4d1", "b4l4u1", "f4l4", "r2:^"] ],
       [ 10,  0,  0, "Snub Icosidodecahedron", [] ],
       [ -4, -3,  0, "Pentakis Dodecahedron", ["u3l4^"] ],
       [  4, -3,  0, "Truncated Dodecahedron", ["u3r4^"] ],
       // Cuboctahedron / Rhombic Dodecahedron family
+      [ -2, -1,  2, "Chamfered Cube", ["f2r2u1^"] ],
+      [ -2,  1,  2, "Chamfered Octahedron", ["f2r2d1^"] ],
       [  2,  0,  2, "Truncated Cuboctahedron", ["f2l2^"] ],
       [  0,  0, -4, "Deltoidal Icositetrahedron", ["l2:^"] ],
       [  0,  0,  4, "Rhombicuboctahedron", ["r2:^"] ],
       [ -2,  0, -2, "Disdyakis Dodecahedron", ["b2r2^"] ],
+      [  2, -1, -2, "Subdivided Cube", ["b2l2u1^"] ],
+      [  2,  1, -2, "Subdivided Octahedron", ["b2l2d1^"] ],
       // Icosidodecahedron / Rhombic Triacontahedron family
+      [ -4, -1,  4, "Chamfered Dodecahedron", ["f4r4u1^"] ],
+      [ -4,  1,  4, "Chamfered Icosahedron", ["f4r4d1^"] ],
       [  4,  0,  4, "Truncated Icosidodecahedron", ["f4l4^"] ],
       [  0,  0, -8, "Deltoidal Hexecontahedron", ["l2:^"] ],
       [  0,  0,  8, "Rhombicosidodecahedron", ["r2:^"] ],
       [ -4,  0, -4, "Disdyakis Triacontahedron", ["b4r4^"] ],
+      [  4, -1, -4, "Subdivided Dodecahedron", ["b4l4u1^"] ],
+      [  4,  1, -4, "Subdivided Icosahedron", ["b4l4d1^"] ],
     ]
   },
 

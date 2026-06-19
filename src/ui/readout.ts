@@ -138,7 +138,6 @@ export class Readout {
     selKind: MarkerKind;
   } | null = null;
   // private verified: boolean = false;
-  private invalid: boolean = false;
   private solving: boolean = false;
   // The top-left SELECTION box stays hidden until the first edit (like the SHAPES
   // and HISTORY panels), so a fresh launch isn't cluttered before you've acted.
@@ -242,7 +241,6 @@ export class Readout {
     this.selectionKind = null;
     this.drag = null;
     // this.verified = false;
-    this.invalid = false;
     this.solving = false;
     this.hide();
   }
@@ -319,13 +317,11 @@ export class Readout {
     poly: Polyhedron | null;
     name: string | null;
     signature: Signature;
-    invalid: boolean;
     solving: boolean;
   }): void {
     this.poly      = opts.poly;
     this.name      = opts.name;
     this.signature = opts.signature;
-    this.invalid   = opts.invalid;
     this.solving   = opts.solving;
     this.show();
   }

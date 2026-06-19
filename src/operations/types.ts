@@ -61,4 +61,12 @@ export interface MorphPlan {
    * caller).
    */
   commit(t: number, weld: boolean): { mesh: Mesh; colors: ColorSet };
+
+  /**
+   * For chiral operations (snub / gyro), the handedness of the currently-selected
+   * mirror form — "R" or "L" — so a committed shape's name can distinguish the two
+   * enantiomorphs (which are otherwise the same combinatorial signature). Reflects
+   * the live `snap` choice; absent on achiral operations (truncate / kis).
+   */
+  chirality?(): "R" | "L";
 }

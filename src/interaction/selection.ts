@@ -40,6 +40,20 @@ export class Selection {
     }
   }
 
+  /** Union `ids` into the selection (switching kind if needed); never removes.
+   *  Used by the Option gesture to accumulate whole arity groups across arities. */
+  addAll(kind: MarkerKind, ids: Set<number>): void {
+    if (ids.size === 0) return;
+    if (this.kind !== kind) {
+      this.kind = kind;
+      this.ids.clear();
+    }
+    for (const id of ids) this.ids.add(id);
+    if (this.readout) {
+      this.readout.updateSelection(this.ids, this.kind);
+    }
+  }
+
   clear(): void {
     this.kind = null;
     this.ids.clear();

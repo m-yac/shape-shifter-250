@@ -470,6 +470,10 @@ export function buildSnub(
     previewFaceColors,
     snap,
     commit,
+    // The two precomputed variants are mirror twists; label them R / L so the two
+    // committed enantiomorphs get distinct names (the choice of which is which is
+    // arbitrary but stable — all that matters is that they differ).
+    chirality: () => (currentVariant === 0 ? "R" : "L"),
   };
 }
 

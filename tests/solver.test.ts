@@ -11,14 +11,14 @@ import { extractTopology } from "../src/solver/topology";
 import { minAdjacentFaceAngle } from "../src/solver/regularize";
 import { faceCentroidOf, newellNormal } from "../src/geometry/polyhedron";
 
-function runToCompletion(poly: Polyhedron): { invalid: boolean; mesh: Mesh } {
+function runToCompletion(poly: Polyhedron): { planar: boolean; mesh: Mesh } {
   const topo = extractTopology(poly);
   const solver = new RelaxSolver(poly.mesh.vertices, topo);
   let guard = 0;
   while (solver.advance() && guard++ < 5000) {
     /* iterate */
   }
-  return { invalid: solver.invalid, mesh: solver.mesh };
+  return { planar: solver.planar, mesh: solver.mesh };
 }
 
 /** Largest out-of-plane distance of any face, relative to size. */
@@ -36,16 +36,16 @@ function planarityError(mesh: Mesh): number {
 
 describe("relaxation solver", () => {
   it("keeps the cube valid, planar and regular", () => {
-    const { invalid, mesh } = runToCompletion(new Polyhedron(getSeed("cube")));
-    expect(invalid).toBe(false);
+    const { planar, mesh } = runToCompletion(new Polyhedron(getSeed("cube")));
+    expect(planar).toBe(true);
     expect(planarityError(mesh)).toBeLessThan(1e-3);
   });
 
   it("does NOT collapse the rhombic dodecahedron (join of cube) to coplanar", () => {
     const join = new Polyhedron(buildKis(new Polyhedron(getSeed("cube")), 0, null).commit(1, true).mesh);
     const topo = extractTopology(join);
-    const { invalid, mesh } = runToCompletion(join);
-    expect(invalid).toBe(false);
+    const { planar, mesh } = runToCompletion(join);
+    expect(planar).toBe(true);
     // faces stay flat ...
     expect(planarityError(mesh)).toBeLessThan(5e-3);
     // ... and adjacent faces stay well away from coplanar (true dihedral ~120°,
@@ -58,23 +58,23 @@ describe("relaxation solver", () => {
     // The gyro starting geometry is rough (no closed-form coplanar distance); this is
     // the real check that the relaxer can finish it into a valid, planar solid.
     const gyro = new Polyhedron(buildGyro(new Polyhedron(getSeed("cube")), 0, null).commit(1, true).mesh);
-    const { invalid, mesh } = runToCompletion(gyro);
-    expect(invalid).toBe(false);
+    const { planar, mesh } = runToCompletion(gyro);
+    expect(planar).toBe(true);
     expect(planarityError(mesh)).toBeLessThan(5e-3);
   });
 
   it("relaxes the welded snub of the octahedron to a valid, planar solid (icosahedron)", () => {
     const snub = new Polyhedron(buildSnub(new Polyhedron(getSeed("octahedron")), 0, null).commit(1, true).mesh);
-    const { invalid, mesh } = runToCompletion(snub);
-    expect(invalid).toBe(false);
+    const { planar, mesh } = runToCompletion(snub);
+    expect(planar).toBe(true);
     expect(planarityError(mesh)).toBeLessThan(5e-3);
   });
 
   it("does NOT collapse the tetrakis hexahedron (kis of cube)", () => {
     const kis = new Polyhedron(buildKis(new Polyhedron(getSeed("cube")), 0, null).commit(0.5, false).mesh);
     const topo = extractTopology(kis);
-    const { invalid, mesh } = runToCompletion(kis);
-    expect(invalid).toBe(false);
+    const { planar, mesh } = runToCompletion(kis);
+    expect(planar).toBe(true);
     // true tetrakis hexahedron dihedral ~143°, i.e. normal angle ~37°
     const minAngleDeg = (minAdjacentFaceAngle(mesh, topo.edgeFaces) * 180) / Math.PI;
     expect(minAngleDeg).toBeGreaterThan(20);

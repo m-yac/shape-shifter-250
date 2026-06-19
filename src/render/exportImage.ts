@@ -22,10 +22,23 @@ import { SceneView } from "./sceneView";
  * =============================================================================
  */
 
-/** Lower-case the shape name, turn slashes into hyphens (e.g. "Truncate/Rectify"),
- *  and runs of whitespace into underscores. */
+// Map the unicode superscript digits used in vertex configurations back to plain
+// ASCII so filenames stay portable.
+const SUPERSCRIPTS = "⁰¹²³⁴⁵⁶⁷⁸⁹";
+
+/** Asciify a display name for use in a filename: the figure notation uses a comma
+ *  for the configuration dot, a caret for the unicode exponent, and "x" for "×"
+ *  (e.g. "Truncated (2×(3.6²))" → "truncated_(2x(3,6^2))"). Then lower-case, turn
+ *  slashes into hyphens, and runs of whitespace into underscores. */
 export function fileBase(name: string | null | undefined): string {
-  const base = (name ?? "").trim().toLowerCase().replace(/\//g, "-").replace(/\s+/g, "_");
+  let s = (name ?? "").trim();
+  // "3.6²" → "3,6^2": superscript runs become "^" + their plain digits; the
+  // configuration dots become commas. (Shape base names contain no periods.)
+  s = s.replace(new RegExp(`[${SUPERSCRIPTS}]+`, "g"), (run) =>
+    "^" + [...run].map((c) => String(SUPERSCRIPTS.indexOf(c))).join(""),
+  );
+  s = s.replace(/\./g, ",").replace(/×/g, "x");
+  const base = s.toLowerCase().replace(/\//g, "-").replace(/\s+/g, "_");
   return base || "polyhedron";
 }
 

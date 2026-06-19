@@ -2,16 +2,38 @@ import { type Polyhedron } from "../geometry/polyhedron";
 import { type MarkerKind } from "../render/sceneView";
 import { type OperationKind } from "./types";
 import { type HistoryEntry } from "../history/history";
+import { vertexConfig, faceConfig, formatConfig } from "../identify/configurations";
 import { config } from "../config";
 
 /**
  * How an operation's selection relates to the solid it acted on:
  *   "whole"  — every vertex/face of its kind (or no explicit selection);
- *   "arity"  — all and only the elements of a single arity (degree-n vertices /
- *              n-gon faces), with `n` being that arity;
- *   "subset" — any other strict subset, with `n` the number of elements.
+ *   "arity"  — one or more COMPLETE arity classes (every degree-n vertex / n-gon
+ *              face); `arities` lists those arities, sorted;
+ *   "subset" — any other set, broken down per vertex/face FIGURE (configuration).
+ *
+ * The reachable selections (with `commandAddsToSelection` off) map to these as:
+ *   default drag → one complete arity class; Option-add → a union of them ("arity");
+ *   Command → a single element ("subset" with one count-1 group).
  */
-export type SelectionCategory = "whole" | "arity" | "subset";
+export type SelDesc =
+  | { kind: "whole" }
+  | { kind: "arity"; arities: number[] }
+  | { kind: "subset"; groups: SubsetGroup[] };
+
+/** One figure (vertex/face configuration) group within a "subset" selection. */
+export interface SubsetGroup {
+  /** How many selected elements share this figure. */
+  count: number;
+  /** The arity (vertex degree / face side-count) of this figure. */
+  degree: number;
+  /** Canonical configuration key (e.g. "3.6.6"), for the figure token. */
+  config: string;
+  /** True when the arity alone identifies the figure on the whole solid (every
+   *  element of this degree shares one configuration), so the name can use the bare
+   *  arity number ("4") instead of the full configuration ("3.6²"). */
+  degreeDetermines: boolean;
+}
 
 /** The operation that produced a history entry (null for the seed root). Carries
  *  everything needed to build the entry's label and derived name. */
@@ -19,9 +41,10 @@ export interface OpDescriptor {
   kind: OperationKind;
   /** True at the welded max end (rectify / join, or a full snub / gyro). */
   weld: boolean;
-  category: SelectionCategory;
-  /** The arity (for "arity") or the element count (for "subset"); 0 for "whole". */
-  n: number;
+  /** What the operation acted on (against the pre-operation shape). */
+  sel: SelDesc;
+  /** Handedness of a chiral op (snub / gyro), so the two enantiomorphs name apart. */
+  chirality?: "R" | "L";
 }
 
 /** Per-vertex degree (incident-face count = edge count on a closed solid). */
@@ -32,44 +55,75 @@ function vertexDegrees(poly: Polyhedron): number[] {
 }
 
 /**
- * Classify a selection against the solid it acts on. Mirrors the arity tally used
- * by the readout's `describeSet`: a selection is "arity" only when it is exactly
- * one arity class — every element of that arity and nothing of any other.
+ * Classify a selection against the solid it acts on. A selection is "arity" when
+ * every arity it touches is fully covered; otherwise it is a "subset" described by
+ * figure (configuration) groups.
  */
 export function classifySelection(
   poly: Polyhedron,
   sel: Set<number> | null,
   kind: MarkerKind,
-): { category: SelectionCategory; n: number } {
+): SelDesc {
   const onFaces = kind === "face";
   const elemCount = onFaces ? poly.faces.length : poly.vertices.length;
   if (sel === null || sel.size === 0 || sel.size === elemCount) {
-    return { category: "whole", n: 0 };
+    return { kind: "whole" };
   }
 
+  const dcel = poly.dcel;
   const degrees = onFaces ? null : vertexDegrees(poly);
   const arityOf = (id: number): number =>
     onFaces ? poly.faces[id].length : degrees![id];
+  const configOf = (id: number): string =>
+    onFaces ? faceConfig(dcel, id) : vertexConfig(dcel, id);
 
-  // How many elements of each arity exist in the whole solid …
-  const total = new Map<number, number>();
+  // How many elements of each arity exist in the whole solid, and which configs
+  // each arity carries (so we know when the arity number alone names the figure).
+  const totalByArity = new Map<number, number>();
+  const configsByArity = new Map<number, Set<string>>();
   for (let id = 0; id < elemCount; id++) {
     const a = arityOf(id);
-    total.set(a, (total.get(a) ?? 0) + 1);
-  }
-  // … and which arities the selection touches.
-  const selected = new Map<number, number>();
-  for (const id of sel) {
-    const a = arityOf(id);
-    selected.set(a, (selected.get(a) ?? 0) + 1);
+    totalByArity.set(a, (totalByArity.get(a) ?? 0) + 1);
+    let set = configsByArity.get(a);
+    if (!set) configsByArity.set(a, (set = new Set()));
+    set.add(configOf(id));
   }
 
-  // Exactly one arity touched, and every element of it selected → an arity class.
-  if (selected.size === 1) {
-    const [a] = [...selected.keys()];
-    if (selected.get(a) === total.get(a)) return { category: "arity", n: a };
+  // … and how many are selected per arity.
+  const selByArity = new Map<number, number>();
+  for (const id of sel) {
+    const a = arityOf(id);
+    selByArity.set(a, (selByArity.get(a) ?? 0) + 1);
   }
-  return { category: "subset", n: sel.size };
+
+  // Every touched arity fully covered → a union of complete arity classes.
+  let fullArity = true;
+  for (const [a, n] of selByArity) {
+    if (n !== totalByArity.get(a)) {
+      fullArity = false;
+      break;
+    }
+  }
+  if (fullArity) {
+    return { kind: "arity", arities: [...selByArity.keys()].sort((x, y) => x - y) };
+  }
+
+  // Otherwise group the selected elements by figure (configuration).
+  const byConfig = new Map<string, { count: number; degree: number }>();
+  for (const id of sel) {
+    const c = configOf(id);
+    const g = byConfig.get(c);
+    if (g) g.count++;
+    else byConfig.set(c, { count: 1, degree: arityOf(id) });
+  }
+  const groups: SubsetGroup[] = [...byConfig.entries()].map(([config, g]) => ({
+    count: g.count,
+    degree: g.degree,
+    config,
+    degreeDetermines: configsByArity.get(g.degree)!.size === 1,
+  }));
+  groups.sort((a, b) => a.degree - b.degree || (a.config < b.config ? -1 : a.config > b.config ? 1 : 0));
+  return { kind: "subset", groups };
 }
 
 /** "vertex"/"vertices" or "face"/"faces" agreeing with `n`. */
@@ -78,46 +132,64 @@ function noun(kind: MarkerKind, n: number): string {
   return n === 1 ? "vertex" : "vertices";
 }
 
-/** Fill `{n}` / `{noun}` and collapse the "{n}-" prefix when a single element is
- *  selected (so "1-Augmented" reads "Augmented"). */
-function fill(template: string, n: number, kind: MarkerKind): string {
-  const s = n === 1 ? template.replace("{n}-", "") : template;
-  return s.replace(/{n}/g, String(n)).replace(/{noun}/g, noun(kind, n));
-}
-
 /** The marker kind an operation acts on (truncate/snub on vertices, kis/gyro on faces). */
 function kindFor(op: OperationKind): MarkerKind {
   return op === "kis" || op === "gyro" ? "face" : "vertex";
 }
 
-/** The `[label, name]` template pair for an operation in a given weld / category. */
-function templates(
-  kind: OperationKind,
-  weld: boolean,
-  category: SelectionCategory,
-): readonly [string, string] {
-  return config.ui.operationLabels[kind][weld ? "welded" : "unwelded"][category];
+/** The base `[label, name]` verb pair for an operation in a given weld. */
+function verbs(kind: OperationKind, weld: boolean): readonly [string, string] {
+  return config.ui.operationLabels[kind][weld ? "welded" : "unwelded"];
+}
+
+/** The short figure token for the derived NAME: the bare arity ("4") when the
+ *  degree pins the figure, else the parenthesized configuration ("(3.6²)"). */
+function shortToken(g: SubsetGroup): string {
+  return g.degreeDetermines ? String(g.degree) : `(${formatConfig(g.config)})`;
+}
+
+/** Apply the selection qualifier to a base verb for the derived NAME (short form). */
+function qualifyName(verb: string, sel: SelDesc): string {
+  if (sel.kind === "whole") return verb;
+  if (sel.kind === "arity") return `${sel.arities.join(",")}-${verb}`;
+  return `${verb} (${sel.groups.map((g) => `${g.count}×${shortToken(g)}`).join(", ")})`;
+}
+
+/** One verbose figure phrase for the HISTORY label, e.g. "1× degree-3 vertex",
+ *  "2× 5-gon faces", or "1×(4.5³)" when the configuration is needed. */
+function longGroup(g: SubsetGroup, kind: MarkerKind): string {
+  if (g.degreeDetermines) {
+    const shape = kind === "face" ? `${g.degree}-gon` : `degree-${g.degree}`;
+    return `${g.count}× ${shape} ${noun(kind, g.count)}`;
+  }
+  return `${g.count}×(${formatConfig(g.config)})`;
+}
+
+/** Apply the selection qualifier to a base verb for the HISTORY label (verbose form). */
+function qualifyLabel(verb: string, sel: SelDesc, kind: MarkerKind): string {
+  if (sel.kind === "whole") return verb;
+  if (sel.kind === "arity") return `${sel.arities.join(",")}-${verb}`;
+  return `${verb} ${sel.groups.map((g) => longGroup(g, kind)).join(", ")}`;
+}
+
+/** Append the chirality suffix (snub / gyro) when present. */
+function withChirality(s: string, chirality: "R" | "L" | undefined): string {
+  return chirality ? `${s} (${chirality})` : s;
 }
 
 /**
  * The action label for a committed operation, shown in the HISTORY rows
- * (e.g. "Rectify", "3-Truncate", "Kis 1 face"). `sel`/`selKind` describe what the
- * operation acted on, against `poly` (the shape it acted on, pre-operation).
+ * (e.g. "Rectify", "2,3-Truncate", "Kis 1× degree-3 vertex (R)").
  */
-export function operationLabel(
-  kind: OperationKind,
-  weld: boolean,
-  poly: Polyhedron,
-  sel: Set<number> | null,
-  selKind: MarkerKind,
-): string {
-  const { category, n } = classifySelection(poly, sel, selKind);
-  return fill(templates(kind, weld, category)[0], n, selKind);
+export function operationLabel(op: OpDescriptor): string {
+  const [labelVerb] = verbs(op.kind, op.weld);
+  return withChirality(qualifyLabel(labelVerb, op.sel, kindFor(op.kind)), op.chirality);
 }
 
-/** The modifier prepended to an ancestor's name to derive this entry's name. */
+/** The modifier prepended to an ancestor's name to derive this entry's name
+ *  (e.g. "Truncated", "2,3-Truncated", "Truncated (2×(3.6²))", "Snub (R)"). */
 function operationModifier(op: OpDescriptor): string {
-  return fill(templates(op.kind, op.weld, op.category)[1], op.n, kindFor(op.kind));
+  return withChirality(qualifyName(verbs(op.kind, op.weld)[1], op.sel), op.chirality);
 }
 
 /** Collapse runs of an identical modifier into an "Nx" prefix (keeping order), so
