@@ -179,7 +179,7 @@ export class DragController {
     private readonly readout: Readout,
     screen: Screen,
     // The shared corruption overlay (boot sequence + discovery flash) and the
-    // top-left SHAPES panel, so discoveries can flash the screen and bump N/250.
+    // top-left SHAPES panel, so discoveries can flash the screen and bump N/99.
     private readonly glitch: GlitchOverlay,
     private readonly shapes: ShapesPanel,
     // Fired once, the first time the user commits an operation (so the SHAPES /

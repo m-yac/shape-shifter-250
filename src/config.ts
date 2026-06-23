@@ -1,6 +1,6 @@
 /**
  * =============================================================================
- *  SHAPE SHIFTER 250 — CONFIGURATION
+ *  SHAPE SHIFTER 99 — CONFIGURATION
  * =============================================================================
  *
  *  This is the single source of truth for every tunable value and on/off switch
@@ -295,22 +295,22 @@ export const config = {
   // ---------------------------------------------------------------------------
   // DISCOVERY — the celebration the first time you MAKE a named shape (Platonic,
   //   Archimedean, Catalan now; Johnson solids, their duals and a few dihedral
-  //   solids later — hence the eventual 250). The shape glows, the screen
+  //   solids later — hence the eventual 99). The shape glows, the screen
   //   glitches, then a popup congratulates you and names the kind of solid.
   //   The very FIRST discovery of the session is made especially strong via the
   //   `first*` multipliers below.
   // ---------------------------------------------------------------------------
   discovery: {
     enabled: false,
-    total: 250, // the eventual shape count (shown in the SHAPES panel as N/250)
+    total: 99, // the eventual shape count (shown in the SHAPES panel as N/99)
 
     // Remember discoveries across page reloads (localStorage). Off by default so
     // the experience is reproducible; turn on to make discoveries permanent.
     persist: false,
-    storageKey: "shape-shifter-250:discovered",
+    storageKey: "ShapeShifter99:discovered",
 
     // Shapes you "already have" at launch and so never trigger a discovery. The
-    // boot story finds exactly the tetrahedron (1/250), so it starts discovered.
+    // boot story finds exactly the tetrahedron (1/99), so it starts discovered.
     preDiscovered: ["Tetrahedron"],
 
     // The bright emissive glow pulse on the shape (picked up by the 3D bloom).
@@ -465,9 +465,8 @@ export const config = {
     // ("all white at 25%"); discovered ones use their full default colors.
     ghostColor: 0x8b94a3,
     ghostOpacity: 0.125,
-    // EASTER EGG: type this word while the browser is open to reveal the ENTIRE
-    // library (every solid lit in full color) until the window is closed.
-    revealAllCode: "xyzzy",
+    // Type this to reveal everthing in the library until it is closed
+    revealAllCode: "idkfa",
     diagram: [
       // Tetrahedron family
       [ -1,  0,  1, "Chamfered Tetrahedron", []  ],
@@ -526,7 +525,7 @@ export const config = {
     [
       "Alice,",
       "Installed on this machine is a strange operating system completely unknown to everyone else to which it has been shown, even other old-timers such as ourselves. Thus, I suspect it will be of great interest to you.",
-      "I’ve only been able to get it to run only one program: SHAPE SHIFTER 250. A fully intact version of this program likely acts as a tool for viewing and modifying polyhedra, but the disk I received was quite damaged. Instead, the program fails to load all but a few shapes and… well you’ll see.",
+      "I’ve only been able to get it to run only one program: SHAPE SHIFTER 99. A fully intact version of this program likely acts as a tool for viewing and modifying polyhedra, but the disk I received was quite damaged. Instead, the program fails to load all but a few shapes and… well you’ll see.",
       "I’ve included my notes on the following pages if they are of any help to you, but if you are at all intrigued I encourage you to boot it up and start clicking.",
       "Good luck",
       "Charlie"
@@ -622,7 +621,7 @@ export const config = {
       "",
       { text: "Starting ErDOS ..." },
       "",
-      { kind: "command", prompt: "C:\\> ", text: "ss250.exe", delay: 0.2 },
+      { kind: "command", prompt: "C:\\> ", text: "ss99.exe", delay: 0.2 },
     ],
 
     program: [
@@ -642,7 +641,7 @@ export const config = {
       " / __/____/ / /_/ /                        ",
       "/____/_____/\\____/                         ",
       "",
-      "Shaper Shifter 250",
+      "Shaper Shifter 99",
       "© 2189 Working Mathematician Supply Inc.",
       { text: "", delay: 1.2 },
       { text: "Loading shape library:", delay: 0.4 },

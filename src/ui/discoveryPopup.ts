@@ -4,7 +4,7 @@ import { Screen, Popup, centered, fadeIn, fadeOut } from "./screen";
 
 /**
  * The centered congratulations popup shown when a new shape is discovered. It
- * names the shape and its solid family, shows the running N/250 count, and
+ * names the shape and its solid family, shows the running N/99 count, and
  * auto-dismisses (config.discovery.popupHoldS) or on click. The first discovery
  * of the run gets a different banner.
  */

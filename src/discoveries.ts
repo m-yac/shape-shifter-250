@@ -34,7 +34,7 @@ export class Discoveries {
     return this.set.has(name);
   }
 
-  /** Total shapes known (pre-discovered + made), for the "N/250" readout. */
+  /** Total shapes known (pre-discovered + made), for the "N/99" readout. */
   get count(): number {
     return this.set.size;
   }

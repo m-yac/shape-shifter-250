@@ -33,7 +33,7 @@ const rgbCss = ([r, g, b]: RGB): string => `rgb(${r}, ${g}, ${b})`;
 /**
  * Top-left OPTIONS panel: a small box-drawing popup pinned to the top-left
  * corner. Its lines come from `config.ui.optionsPanel`:
- *   Library: N/250 shapes [Browse]   — count + the browse action button
+ *   Library: N/99 shapes [Browse]   — count + the browse action button
  *   Regular: [Canonical] [Faces] …    — solver-strategy radio group (press-and-hold)
  *   Colors:  [Tetra] [Octa] …         — color-scheme radio group (instant select)
  * The widgets themselves (action buttons + radio groups) come from ui/controls.
